@@ -1,0 +1,151 @@
+export const MONTHS_INDO = [
+  'Januari',
+  'Februari',
+  'Maret',
+  'April',
+  'Mei',
+  'Juni',
+  'Juli',
+  'Agustus',
+  'September',
+  'Oktober',
+  'November',
+  'Desember',
+];
+
+export const DAYS_INDO = [
+  'Minggu',
+  'Senin',
+  'Selasa',
+  'Rabu',
+  'Kamis',
+  'Jumat',
+  'Sabtu',
+];
+
+/**
+ * Parses a date input safely into a Date object without timezone offset bugs for YYYY-MM-DD.
+ */
+export function parseDateSafe(input: string | Date | number | null | undefined): Date | null {
+  if (!input) return null;
+  if (input instanceof Date) return isNaN(input.getTime()) ? null : input;
+  if (typeof input === 'number') {
+    const d = new Date(input);
+    return isNaN(d.getTime()) ? null : d;
+  }
+
+  const str = String(input).trim();
+  if (!str || str === 'No Date' || str === '-') return null;
+
+  // Handle YYYY-MM-DD or YYYY-MM-DD HH:mm:ss or YYYY-MM-DDTHH:mm:ss
+  const ymdMatch = str.match(/^(\d{4})[/-](\d{1,2})[/-](\d{1,2})(?:[\sT]+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?/);
+  if (ymdMatch) {
+    const year = parseInt(ymdMatch[1], 10);
+    const month = parseInt(ymdMatch[2], 10) - 1;
+    const day = parseInt(ymdMatch[3], 10);
+    const hour = ymdMatch[4] !== undefined ? parseInt(ymdMatch[4], 10) : 0;
+    const minute = ymdMatch[5] !== undefined ? parseInt(ymdMatch[5], 10) : 0;
+    const second = ymdMatch[6] !== undefined ? parseInt(ymdMatch[6], 10) : 0;
+    return new Date(year, month, day, hour, minute, second);
+  }
+
+  // Handle DD-MM-YYYY or DD/MM/YYYY
+  const dmyMatch = str.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})/);
+  if (dmyMatch) {
+    const day = parseInt(dmyMatch[1], 10);
+    const month = parseInt(dmyMatch[2], 10) - 1;
+    const year = parseInt(dmyMatch[3], 10);
+    return new Date(year, month, day);
+  }
+
+  const parsed = new Date(str);
+  return isNaN(parsed.getTime()) ? null : parsed;
+}
+
+/**
+ * Formats any date into Indonesian date string format.
+ * Examples:
+ * - "2026-08-03" -> "3 Agustus 2026"
+ * - "2026-08-03" (withDayName: true) -> "Senin, 3 Agustus 2026"
+ * - "2026-08-03 14:30" (withTime: true) -> "3 Agustus 2026, 14.30 WIB"
+ */
+export function formatTanggalIndo(
+  input: string | Date | number | null | undefined,
+  options?: {
+    withDayName?: boolean;
+    withTime?: boolean;
+    shortMonth?: boolean;
+    uppercase?: boolean;
+  }
+): string {
+  if (!input) return '-';
+  const strInput = String(input).trim();
+  if (!strInput || strInput === 'No Date' || strInput === '-') return strInput || '-';
+
+  const d = parseDateSafe(input);
+  if (!d) return strInput;
+
+  const { withDayName = false, withTime = false, shortMonth = false, uppercase = false } = options || {};
+
+  const dayName = DAYS_INDO[d.getDay()];
+  const dayNum = d.getDate();
+  const monthName = MONTHS_INDO[d.getMonth()];
+  const displayMonth = shortMonth ? monthName.substring(0, 3) : monthName;
+  const year = d.getFullYear();
+
+  let formatted = `${dayNum} ${displayMonth} ${year}`;
+  if (withDayName) {
+    formatted = `${dayName}, ${formatted}`;
+  }
+
+  if (withTime) {
+    const hasExplicitTime = strInput.includes(':') || input instanceof Date || typeof input === 'number';
+    if (hasExplicitTime) {
+      const hour = String(d.getHours()).padStart(2, '0');
+      const min = String(d.getMinutes()).padStart(2, '0');
+      formatted = `${formatted}, ${hour}.${min} WIB`;
+    }
+  }
+
+  if (uppercase) {
+    return formatted.toUpperCase();
+  }
+
+  return formatted;
+}
+
+/**
+ * Returns current date in formatted Indonesian e.g. "Senin, 3 Agustus 2026"
+ */
+export function getTodayIndoString(withDayName: boolean = true): string {
+  return formatTanggalIndo(new Date(), { withDayName });
+}
+
+/**
+ * Checks if a date falls within the current month or the next month.
+ */
+export function isThisOrNextMonth(input: string | Date | number | null | undefined): boolean {
+  if (!input) return true; // Keep items without explicit date
+  const strInput = String(input).trim();
+  if (!strInput || strInput === 'No Date' || strInput === '-') return true;
+
+  const d = parseDateSafe(input);
+  if (!d) return true;
+
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const currentMonth = now.getMonth(); // 0..11
+
+  // Calculate next month
+  const nextMonthObj = new Date(currentYear, currentMonth + 1, 1);
+  const nextMonthYear = nextMonthObj.getFullYear();
+  const nextMonth = nextMonthObj.getMonth();
+
+  const itemYear = d.getFullYear();
+  const itemMonth = d.getMonth();
+
+  const isCurrentMonth = itemYear === currentYear && itemMonth === currentMonth;
+  const isNextMonth = itemYear === nextMonthYear && itemMonth === nextMonth;
+
+  return isCurrentMonth || isNextMonth;
+}

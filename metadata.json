@@ -1,0 +1,6 @@
+{
+  "name": "Rapor Siswa Real-time",
+  "description": "Aplikasi rapor siswa digital real-time untuk orang tua murid, dilengkapi jadwal, presensi, perkembangan belajar, nilai, dan instalasi PWA.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
