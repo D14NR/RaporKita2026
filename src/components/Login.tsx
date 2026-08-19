@@ -17,12 +17,12 @@ import {
   Search,
   X
 } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import { d1 } from '../lib/d1';
 import { DataSiswa } from '../types';
 
 interface LoginProps {
-  onLoginSuccess: (student: DataSiswa, fromSupabase: boolean) => void;
-  useSupabase: boolean;
+  onLoginSuccess: (student: DataSiswa, fromD1: boolean) => void;
+  useD1: boolean;
   dbStatus: 'disconnected' | 'testing' | 'connected' | 'error';
   onToggleDemoMode: () => void;
 }
@@ -58,7 +58,7 @@ const normalizeDate = (dateStr: string | undefined | null): string => {
   return cleaned;
 };
 
-export default function Login({ onLoginSuccess, useSupabase, dbStatus, onToggleDemoMode }: LoginProps) {
+export default function Login({ onLoginSuccess, useD1, dbStatus, onToggleDemoMode }: LoginProps) {
   const [nis, setNis] = useState('');
   const [dob, setDob] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -80,29 +80,40 @@ export default function Login({ onLoginSuccess, useSupabase, dbStatus, onToggleD
 
   const handleSearchNis = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!searchName.trim()) return;
-    
+    const trimmedName = searchName.trim();
+    if (!trimmedName) return;
+
     setIsSearching(true);
     setSearchError(null);
     setSearchResult(null);
-    
+
     try {
-      let query = supabase
-        .from('data_siswa')
-        .select('nis, nama, cabang, asal_sekolah')
-        .ilike('nama', `%${searchName.trim()}%`);
-        
-      if (searchCabang.trim()) {
-        query = query.ilike('cabang', `%${searchCabang.trim()}%`);
-      }
-      
-      const { data, error: err } = await query.limit(10);
-      
+      const { data, error: err } = await d1.from('data_siswa').select('*');
+
       if (err) throw err;
-      if (data && data.length > 0) {
-        setSearchResult(data);
+
+      const normalizedInput = trimmedName.toLowerCase();
+      const normalizedCabang = searchCabang.trim().toLowerCase();
+
+      const filtered = (data || []).filter((row: any) => {
+        const namaLengkap = String(row?.nama_lengkap || row?.nama || '').trim();
+        const nama = String(row?.nama || '').trim();
+        const cabang = String(row?.cabang || '').trim();
+
+        const matchesName =
+          namaLengkap.toLowerCase().includes(normalizedInput) ||
+          nama.toLowerCase().includes(normalizedInput) ||
+          `${namaLengkap} ${nama}`.toLowerCase().includes(normalizedInput);
+
+        const matchesCabang = !normalizedCabang || cabang.toLowerCase().includes(normalizedCabang);
+
+        return matchesName && matchesCabang;
+      }).slice(0, 10);
+
+      if (filtered.length > 0) {
+        setSearchResult(filtered);
       } else {
-        setSearchError('Siswa tidak ditemukan. Pastikan nama sudah benar.');
+        setSearchError('Siswa tidak ditemukan. Pastikan nama sudah benar, atau cek apakah data tersimpan di kolom nama/nama_lengkap di D1.');
       }
     } catch (err: any) {
       setSearchError(err.message || 'Terjadi kesalahan saat mencari data.');
@@ -136,7 +147,7 @@ export default function Login({ onLoginSuccess, useSupabase, dbStatus, onToggleD
       setProgress(35);
 
       let studentData: DataSiswa | null = null;
-      let loggedInViaSupabase = false;
+      let loggedInViaD1 = false;
       let nisExists = false;
 
       // Prepare multiple possible formats of NIS to query in parallel
@@ -154,8 +165,8 @@ export default function Login({ onLoginSuccess, useSupabase, dbStatus, onToggleD
 
       console.log('Attempting login with NIS candidates:', possibleNisList, 'and birthday input:', trimmedDob);
 
-      // Query database directly
-      const { data, error: sbError } = await supabase
+      // Query database directly using schema: data_siswa(nis, tanggal_lahir, nama_lengkap)
+      const { data, error: sbError } = await d1
         .from('data_siswa')
         .select('*')
         .in('nis', possibleNisList);
@@ -166,19 +177,18 @@ export default function Login({ onLoginSuccess, useSupabase, dbStatus, onToggleD
 
       if (data && data.length > 0) {
         nisExists = true;
-        // Find matched row by normalized date comparison with fallback check strategies
-        const matched = data.find(item => {
+        const matched = data.find((item: any) => {
           if (!item.tanggal_lahir) return false;
-          
+
           const itemDob = normalizeDate(item.tanggal_lahir);
           const inputDob = normalizeDate(trimmedDob);
 
           if (itemDob === inputDob) return true;
-          
-          const numDb = item.tanggal_lahir.replace(/\D/g, '');
+
+          const numDb = String(item.tanggal_lahir).replace(/\D/g, '');
           const numInput = trimmedDob.replace(/\D/g, '');
           if (numDb && numInput && numDb === numInput) return true;
-          
+
           try {
             const dateDb = new Date(item.tanggal_lahir);
             const dateInput = new Date(trimmedDob);
@@ -199,13 +209,17 @@ export default function Login({ onLoginSuccess, useSupabase, dbStatus, onToggleD
           } catch (e) {
             console.error('Error in fallback date parsing:', e);
           }
-          
+
           return false;
         });
 
         if (matched) {
-          studentData = matched as DataSiswa;
-          loggedInViaSupabase = true;
+          studentData = {
+            ...(matched as DataSiswa),
+            nama: matched.nama || matched.nama_lengkap || 'Siswa',
+            nama_lengkap: matched.nama_lengkap || matched.nama || 'Siswa'
+          };
+          loggedInViaD1 = true;
         }
       }
 
@@ -228,7 +242,7 @@ export default function Login({ onLoginSuccess, useSupabase, dbStatus, onToggleD
         setSuccess(`Data Rapor ${studentData.nama} berhasil dimuat!`);
         await delay(400);
 
-        onLoginSuccess(studentData, loggedInViaSupabase);
+        onLoginSuccess(studentData, loggedInViaD1);
         setIsLoading(false);
       } else {
         setIsLoading(false);
@@ -272,7 +286,7 @@ export default function Login({ onLoginSuccess, useSupabase, dbStatus, onToggleD
               {matchedStudentName ? `Memuat Rapor: ${matchedStudentName}` : 'Mengambil Data Rapor Siswa'}
             </h3>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 font-medium">
-              Sedang menghubungkan ke Database Supabase & menyingkronkan data...
+              Sedang menghubungkan ke Database Cloudflare D1 & menyingkronkan data...
             </p>
 
             {/* Progress Bar */}
@@ -311,7 +325,7 @@ export default function Login({ onLoginSuccess, useSupabase, dbStatus, onToggleD
                   <div className="h-4 w-4 rounded-full border border-slate-300 shrink-0"></div>
                 )}
                 <span className={loadingStep >= 2 ? 'font-bold text-slate-800 dark:text-slate-200' : 'text-slate-400'}>
-                  2. Mengakses Tabel Database Supabase (`data_siswa`)
+                  2. Mengakses Tabel Database Cloudflare D1 (`data_siswa`)
                 </span>
               </div>
 

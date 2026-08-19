@@ -11,6 +11,7 @@ export interface DataSiswa {
   id: string;
   nis: string;
   nama: string;
+  nama_lengkap?: string;
   tanggal_lahir?: string; // format 'YYYY-MM-DD'
   asal_sekolah?: string;
   jenjang_studi?: string;
@@ -137,26 +138,50 @@ export interface OutsideService {
   id: string;
   nis: string;
   nama?: string;
+  nama_siswa?: string;  // Schema field name
   tanggal: string;
   mata_pelajaran?: string;
   materi_sub_bab?: string;
   durasi?: string;
   pengajar?: string;
+  nama_pengajar?: string;  // Schema field name
+  kode_pengajar?: string;
+  cabang?: string;
+  siswa_id?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface RiwayatPelayananSiswa {
+  id: string;
+  siswa_id?: string;
+  nis: string;
+  nama_siswa?: string;
+  tanggal: string;
+  kode_pengajar?: string;
+  nama_pengajar: string;
+  mata_pelajaran: string;
+  materi_sub_bab?: string;
+  durasi?: string;
   cabang?: string;
   created_at?: string;
   updated_at?: string;
-  siswa_id?: string;
 }
 
 export interface Pengajar {
   id: string;
   kode_pengajar?: string;
   nama: string;
+  nama_pengajar?: string;  // Schema field name (aliases to 'nama')
   bidang_studi: string;
+  bidang_studi_mata_pelajaran?: string;  // Schema field name (aliases to 'bidang_studi')
   email?: string;
   no_whatsapp?: string;
   domisili?: string;
   username?: string;
+  password_hash?: string;  // Schema field
+  created_at?: string;
+  updated_at?: string;
 }
 
 export interface PermintaanPelayanan {
@@ -165,9 +190,12 @@ export interface PermintaanPelayanan {
   nama_siswa?: string;
   nama?: string;
   cabang?: string;
-  tanggal: string;
+  tanggal?: string;
+  tanggal_pengajuan?: string;
   mata_pelajaran: string;
-  pengajar: string;
+  kode_pengajar?: string | null;
+  pengajar?: string;
+  nama_pengajar?: string;
   keperluan?: string;
   status?: 'Menunggu' | 'Disetujui' | 'Ditolak' | string;
   tanggal_disetujui?: string;

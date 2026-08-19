@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { X, Calendar, Clock, BookOpen, UserCheck, Send, CheckCircle, HeartHandshake, ChevronDown, Search } from 'lucide-react';
 import { DataSiswa, Pengajar } from '../types';
-import { supabase, supabaseKbm } from '../lib/supabase';
+import { d1, d1Kbm } from '../lib/d1';
 
 interface SearchableSelectOption {
   value: string;
@@ -42,12 +42,18 @@ const SearchableSelect: React.FC<SearchableSelectProps> = ({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const filteredOptions = options.filter(
-    (opt) =>
-      opt.label.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (opt.subLabel && opt.subLabel.toLowerCase().includes(searchTerm.toLowerCase())) ||
-      opt.value.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredOptions = options.filter((opt) => {
+    const label = String(opt.label ?? '').toLowerCase();
+    const sub = String(opt.subLabel ?? '').toLowerCase();
+    const val = String(opt.value ?? '').toLowerCase();
+    const needle = String(searchTerm ?? '').toLowerCase();
+
+    return (
+      (label && label.includes(needle)) ||
+      (sub && sub.includes(needle)) ||
+      (val && val.includes(needle))
+    );
+  });
 
   const selectedOption = options.find((opt) => opt.value === value);
 
@@ -182,36 +188,43 @@ export const OutsideServiceFormModal: React.FC<OutsideServiceFormModalProps> = (
   const fetchPengajarData = async () => {
     setIsLoadingPengajar(true);
     try {
-      let fetchedData: Pengajar[] | null = null;
-
-      // Try main Supabase client
-      const resMain = await supabase
+      // Fetch pengajar data from database
+      const res = await d1
         .from('pengajar')
-        .select('*')
-        .order('nama', { ascending: true });
+        .select('*');
 
-      if (!resMain.error && resMain.data && resMain.data.length > 0) {
-        fetchedData = resMain.data;
-      } else {
-        // Try KBM Supabase client if main fails or is empty
-        const resKbm = await supabaseKbm
-          .from('pengajar')
-          .select('*')
-          .order('nama', { ascending: true });
+      if (res.error) {
+        console.error('Error fetching pengajar data:', res.error);
+        throw res.error;
+      }
 
-        if (!resKbm.error && resKbm.data && resKbm.data.length > 0) {
-          fetchedData = resKbm.data;
-        }
+      let fetchedData = res.data as Pengajar[];
+      
+      console.log('Raw pengajar data from API:', fetchedData);
+
+      if (!Array.isArray(fetchedData)) {
+        console.warn('fetchedData is not an array:', fetchedData);
+        fetchedData = [];
       }
 
       if (fetchedData && fetchedData.length > 0) {
-        setPengajarList(fetchedData);
+        // Normalize data: ensure bidang_studi is set from either bidang_studi or bidang_studi_mata_pelajaran
+        const normalizedData = fetchedData.map((p) => ({
+          ...p,
+          bidang_studi: (p as any).bidang_studi || (p as any).bidang_studi_mata_pelajaran || '',
+          nama: (p as any).nama || (p as any).nama_pengajar || '',
+        }));
 
-        // Extract unique non-empty bidang_studi values (split by comma/semicolon/newline if comma-separated)
+        setPengajarList(normalizedData);
+        console.log('Normalized pengajar data:', normalizedData);
+
+        // Extract unique non-empty bidang_studi values
         const uniqueBidangSet = new Set<string>();
-        fetchedData.forEach((p) => {
-          if (p.bidang_studi) {
-            const items = p.bidang_studi.split(/[,;\n]+/);
+        normalizedData.forEach((p) => {
+          const bidang = p.bidang_studi?.trim();
+          if (bidang) {
+            // Split by comma, semicolon, or newline for multi-subject teachers
+            const items = bidang.split(/[,;\n]+/);
             items.forEach((item) => {
               const clean = item.trim();
               if (clean) {
@@ -220,16 +233,25 @@ export const OutsideServiceFormModal: React.FC<OutsideServiceFormModalProps> = (
             });
           }
         });
+
         const uniqueBidang = Array.from(uniqueBidangSet).sort((a, b) => a.localeCompare(b));
+        console.log('Extracted bidang studi options:', uniqueBidang);
 
         if (uniqueBidang.length > 0) {
           setBidangStudiOptions(uniqueBidang);
           setSubject((prev) => (uniqueBidang.includes(prev) ? prev : uniqueBidang[0]));
+          console.log('Bidang studi options set successfully');
+        } else {
+          console.warn('No bidang studi extracted, using fallback');
+          setBidangStudiOptions(DEFAULT_PENGAJAR_FALLBACK.map((p) => p.bidang_studi));
         }
 
-        setTeacher((prev) => prev || (fetchedData && fetchedData[0]?.nama) || '');
+        // Set default teacher if not already set
+        const firstTeacher = normalizedData[0]?.nama || '';
+        setTeacher((prev) => prev || firstTeacher);
       } else {
-        // Fallback default pengajar list if table is empty or not created yet
+        // Fallback default pengajar list if table is empty
+        console.warn('No pengajar data found, using fallback defaults');
         setPengajarList(DEFAULT_PENGAJAR_FALLBACK);
         const uniqueBidang = Array.from(
           new Set(DEFAULT_PENGAJAR_FALLBACK.map((p) => p.bidang_studi))
@@ -238,8 +260,12 @@ export const OutsideServiceFormModal: React.FC<OutsideServiceFormModalProps> = (
         setTeacher((prev) => prev || DEFAULT_PENGAJAR_FALLBACK[0].nama);
       }
     } catch (err) {
-      console.warn('Handling pengajar fetch fallback smoothly:', err);
+      console.error('Error in fetchPengajarData, using fallback:', err);
       setPengajarList(DEFAULT_PENGAJAR_FALLBACK);
+      const uniqueBidang = Array.from(
+        new Set(DEFAULT_PENGAJAR_FALLBACK.map((p) => p.bidang_studi))
+      ).sort();
+      setBidangStudiOptions(uniqueBidang);
     } finally {
       setIsLoadingPengajar(false);
     }
@@ -296,29 +322,46 @@ export const OutsideServiceFormModal: React.FC<OutsideServiceFormModalProps> = (
     const targetDate = date || new Date().toISOString().split('T')[0];
 
     try {
+      if (!student || !student.id || !student.nis) {
+        alert('Data siswa tidak lengkap. Silakan login ulang atau pilih siswa yang valid.');
+        setIsSubmitting(false);
+        return;
+      }
+
+      const selectedTeacherRecord = pengajarList.find(
+        (p) => p.nama === teacher || p.id === teacher || p.kode_pengajar === teacher
+      );
+
       const payload = {
-        nis: student?.nis || null,
-        nama: student?.nama || null,
+        id: `service-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        siswa_id: student.id,
+        nis: student.nis,
+        nama_siswa: student.nama || student.nama_lengkap || 'Siswa',
         tanggal: targetDate,
-        mata_pelajaran: subject,
-        materi_sub_bab: topic || 'Layanan Konsultasi Belajar',
-        durasi: duration,
-        pengajar: teacher || 'Tentor Piket',
-        cabang: student?.cabang || null,
-        siswa_id: student?.id || null,
+        kode_pengajar: selectedTeacherRecord?.kode_pengajar?.trim() || null,
+        nama_pengajar: selectedTeacherRecord?.nama || teacher || 'Tentor Piket',
+        mata_pelajaran: (subject || 'Klinik Belajar Umum').trim() || 'Klinik Belajar Umum',
+        materi_sub_bab: (topic || 'Layanan Konsultasi Belajar').trim() || 'Layanan Konsultasi Belajar',
+        durasi: (duration || '60 menit').trim() || '60 menit',
+        cabang: student.cabang || null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
       };
 
-      const { data, error } = await supabase
-        .from('tambahan_pelayanan')
+      console.log('Menyimpan presensi ke riwayat_pelayanan_siswa:', payload);
+
+      const { data, error } = await d1
+        .from('riwayat_pelayanan_siswa')
         .insert([payload])
         .select();
 
       if (error) {
-        console.error('Gagal menyimpan ke tambahan_pelayanan:', error);
+        console.error('Gagal menyimpan ke riwayat_pelayanan_siswa:', error);
+        alert(`Gagal menyimpan layanan luar KBM: ${error?.message || 'Error tidak diketahui'}`);
       } else {
         console.log('Presensi Layanan Luar KBM berhasil disimpan:', data);
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error saat menyimpan presensi layanan luar KBM:', err);
     } finally {
       setIsSubmitting(false);

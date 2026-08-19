@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { X, Calendar, Clock, Send, CheckCircle, FileText } from 'lucide-react';
 import { DataSiswa } from '../types';
-import { supabase } from '../lib/supabase';
+import { d1 } from '../lib/d1';
 import { formatTanggalIndo } from '../lib/dateUtils';
 
 interface LeaveFormModalProps {
@@ -48,50 +48,74 @@ export const LeaveFormModal: React.FC<LeaveFormModalProps> = ({
 
     const targetDate = date || scheduleData?.date || new Date().toISOString().split('T')[0];
     const targetSubject = scheduleData?.subject || 'Umum';
+    const safeStudentId = (student?.id || '').trim();
+
+    if (!student || !safeStudentId || !student.nis) {
+      alert('Data siswa tidak lengkap. Silakan login ulang atau pilih siswa yang valid terlebih dahulu.');
+      setIsSubmitting(false);
+      return;
+    }
+
+    let didSave = false;
 
     try {
+      const nowIso = new Date().toISOString();
       const payload = {
-        nis: student?.nis || null,
-        nama: student?.nama || null,
+        id: `leave-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        siswa_id: safeStudentId,
+        nis: student.nis,
+        nama_siswa: student.nama || student.nama_lengkap || null,
         tanggal: targetDate,
         mata_pelajaran: targetSubject,
-        materi_sub_bab: `Permohonan ${leaveType}`,
+        materi_sub_bab: reason ? `Permohonan ${leaveType}: ${reason}` : `Permohonan ${leaveType}`,
         kehadiran: leaveType,
         prosen_penguasaan: 0,
         prosen_penjelasan: 0,
         prosen_kondisi: 0,
         catatan_pengajar: reason ? `Alasan ${leaveType}: ${reason}` : `Permohonan ${leaveType}`,
-        cabang: student?.cabang || null,
-        siswa_id: student?.id || null,
+        cabang: student.cabang || null,
+        created_at: nowIso,
+        updated_at: nowIso,
       };
 
-      const { data, error } = await supabase
+      const { data, error } = await d1
         .from('perkembangan_belajar')
         .insert([payload])
         .select();
 
       if (error) {
-        console.error('Gagal menyimpan permohonan ke perkembangan_belajar:', error);
+        console.error('Gagal menyimpan permohonan ke perkembangan_belajar:', { payload, error });
+        alert(`Gagal menyimpan data ketidakhadiran: ${error?.message || 'Error tidak diketahui'}`);
+      } else if (!Array.isArray(data) || data.length === 0) {
+        console.error('Insert perkembangan_belajar berhasil dipanggil tapi tidak menghasilkan row:', { payload, data });
+        alert('Permohonan tidak tersimpan. Pastikan endpoint worker D1 sudah benar dan database aktif.');
       } else {
+        didSave = true;
         console.log('Permohonan berhasil disimpan ke perkembangan_belajar:', data);
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error saat menyimpan permohonan:', err);
+      alert(`Error saat menyimpan data ketidakhadiran: ${err?.message || 'Error tidak diketahui'}`);
     } finally {
       setIsSubmitting(false);
-      setIsSuccess(true);
 
-      if (onSubmitSuccess) {
-        onSubmitSuccess({
-          type: leaveType,
-          subject: targetSubject,
-          date: targetDate,
-          reason
-        });
+      if (didSave) {
+        setIsSuccess(true);
+
+        if (onSubmitSuccess) {
+          onSubmitSuccess({
+            type: leaveType,
+            subject: targetSubject,
+            date: targetDate,
+            reason
+          });
+        }
       }
 
       setTimeout(() => {
-        setIsSuccess(false);
+        if (didSave) {
+          setIsSuccess(false);
+        }
         setReason('');
         onClose();
       }, 1800);

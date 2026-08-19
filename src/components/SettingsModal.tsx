@@ -287,7 +287,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 </div>
                 <div className="flex justify-between py-1 border-b border-slate-100 dark:border-slate-800">
                   <span className="text-slate-400">Database</span>
-                  <span className="font-bold text-emerald-600 dark:text-emerald-400">Supabase Cloud Sync</span>
+                  <span className="font-bold text-emerald-600 dark:text-emerald-400">Cloudflare D1 Sync</span>
                 </div>
                 <div className="flex justify-between py-1">
                   <span className="text-slate-400">Pengembang</span>

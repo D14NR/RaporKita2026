@@ -8,13 +8,13 @@ interface AttendancePieChartProps {
 const COLORS = {
   'Hadir': '#10b981',
   'Izin': '#f59e0b',
-  'Alpha': '#ef4444',
+  'Alpa': '#ef4444',
   'Sakit': '#8b5cf6'
 };
 
 export const AttendancePieChart: React.FC<AttendancePieChartProps> = ({ data }) => {
   const chartData = useMemo(() => {
-    const counts: Record<string, number> = { 'Hadir': 0, 'Izin': 0, 'Alpha': 0, 'Sakit': 0 };
+    const counts: Record<string, number> = { 'Hadir': 0, 'Izin': 0, 'Alpa': 0, 'Sakit': 0 };
     data.forEach(item => {
       if (counts.hasOwnProperty(item.status)) {
         counts[item.status]++;

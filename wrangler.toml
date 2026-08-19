@@ -1,0 +1,12 @@
+name = "raporkita-db"
+pages_build_output_dir = "dist"
+compatibility_date = "2026-08-18"
+compatibility_flags = ["nodejs_compat"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "db-appku"
+database_id = "ac691a60-72a0-4ab5-980f-fdb09a232f83"
+
+[vars]
+APP_URL = "https://lps-siswa.pages.dev"

@@ -37,7 +37,7 @@ import {
   Wifi,
   WifiOff
 } from 'lucide-react';
-import { supabase, supabaseKbm, DB_SETUP_SQL } from './lib/supabase';
+import { d1, d1Kbm, DB_SETUP_SQL } from './lib/d1';
 import { 
   Student, 
   DataSiswa,
@@ -66,8 +66,6 @@ import { SettingsModal } from './components/SettingsModal';
 import { NotificationModal } from './components/NotificationModal';
 import { UjiMateriView } from './components/UjiMateriView';
 import { UpdateCheckerModal } from './components/UpdateCheckerModal';
-import { initOneSignal, setOneSignalUserNis } from './lib/oneSignal';
-import { sendWebPushNotification } from './lib/pushNotifications';
 
 const APP_VERSION = '1.0.0';
 
@@ -86,7 +84,7 @@ export default function App() {
   });
 
   // Navigation & UI State
-  const [activeTab, setActiveTab] = useState<'overview' | 'kbm-reguler' | 'kbm-tambahan' | 'presensi' | 'perkembangan' | 'uji-materi' | 'nilai' | 'luar-kbm' | 'analisa' | 'supabase-config'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'kbm-reguler' | 'kbm-tambahan' | 'presensi' | 'perkembangan' | 'uji-materi' | 'nilai' | 'luar-kbm' | 'analisa' | 'd1-config'>('overview');
   const [showChartNilai, setShowChartNilai] = useState(false);
   const [showChartPresensi, setShowChartPresensi] = useState(false);
   const [showChartPerkembangan, setShowChartPerkembangan] = useState(false);
@@ -126,8 +124,16 @@ export default function App() {
   const [copiedSql, setCopiedSql] = useState(false);
   const [customToast, setCustomToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
   const [showProfileModal, setShowProfileModal] = useState(false);
+  const [isProfileEditMode, setIsProfileEditMode] = useState(false);
+  const [profileFormData, setProfileFormData] = useState<any>(null);
+  const [profileSelectedSubjects, setProfileSelectedSubjects] = useState<string[]>([]);
+  const [profileSubjectSearch, setProfileSubjectSearch] = useState('');
+  const [isProfileSubjectPickerOpen, setIsProfileSubjectPickerOpen] = useState(false);
+  const [mataPelajaranOptions, setMataPelajaranOptions] = useState<string[]>([]);
+  const [isProfileSaving, setIsProfileSaving] = useState(false);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
   const [isNotificationModalOpen, setIsNotificationModalOpen] = useState(false);
+  const [unreadNotifCount, setUnreadNotifCount] = useState<number>(0);
 
   const [dataRefreshCounter, setDataRefreshCounter] = useState(0);
   const [isOutsideServiceModalOpen, setIsOutsideServiceModalOpen] = useState(false);
@@ -154,6 +160,155 @@ export default function App() {
     setIsLeaveModalOpen(true);
   };
 
+  const parseSubjectList = (value?: string) => {
+    if (!value) return [];
+    return value
+      .split(/[;,]/)
+      .map((item) => item.trim())
+      .filter(Boolean);
+  };
+
+  const handleEditProfile = () => {
+    if (currentStudent) {
+      const selectedSubjects = parseSubjectList(currentStudent.mata_pelajaran || '');
+      setProfileSelectedSubjects(selectedSubjects);
+      setProfileFormData({
+        id: currentStudent.id,
+        nama_lengkap: currentStudent.nama_lengkap || currentStudent.nama || '',
+        tanggal_lahir: currentStudent.tanggal_lahir || '',
+        asal_sekolah: currentStudent.asal_sekolah || '',
+        no_whatsapp_siswa: currentStudent.no_whatsapp_siswa || '',
+        no_whatsapp_orang_tua: currentStudent.no_whatsapp_orang_tua || '',
+        email: currentStudent.email || '',
+        mata_pelajaran: currentStudent.mata_pelajaran || '',
+      });
+      setProfileSubjectSearch('');
+      setIsProfileSubjectPickerOpen(false);
+      setIsProfileEditMode(true);
+    }
+  };
+
+  const handleSaveProfile = async () => {
+    if (!profileFormData) return;
+
+    const profileId = profileFormData.id || currentStudent?.id;
+    const profileNis = currentStudent?.nis;
+    if (!profileId && !profileNis) {
+      setCustomToast({
+        message: 'Identitas siswa tidak ditemukan. Silakan masuk kembali.',
+        type: 'error'
+      });
+      return;
+    }
+    
+    setIsProfileSaving(true);
+    try {
+      const updatePayload = {
+        nama_lengkap: profileFormData.nama_lengkap,
+        tanggal_lahir: profileFormData.tanggal_lahir,
+        asal_sekolah: profileFormData.asal_sekolah,
+        no_whatsapp_siswa: profileFormData.no_whatsapp_siswa,
+        no_whatsapp_orang_tua: profileFormData.no_whatsapp_orang_tua,
+        email: profileFormData.email,
+        mata_pelajaran: profileFormData.mata_pelajaran,
+      };
+
+      let updateQuery = d1
+        .from('data_siswa')
+        .update(updatePayload);
+
+      if (profileId) {
+        updateQuery = updateQuery.eq('id', profileId);
+      } else {
+        updateQuery = updateQuery.eq('nis', profileNis);
+      }
+
+      const { data, error } = await updateQuery.select();
+
+      if (error) {
+        console.error('Error updating profile:', error);
+        setCustomToast({
+          message: `Gagal menyimpan perubahan profil: ${error.message}`,
+          type: 'error'
+        });
+      } else {
+        // Update currentStudent state
+        if (currentStudent) {
+          const updatedStudent = { ...currentStudent, ...updatePayload };
+          setCurrentStudent(updatedStudent);
+          setSelectedStudentData(updatedStudent);
+        }
+        
+        setCustomToast({
+          message: 'Profil siswa berhasil diperbarui',
+          type: 'success'
+        });
+        setIsProfileEditMode(false);
+        setProfileFormData(null);
+        setTimeout(() => setCustomToast(null), 3000);
+      }
+    } catch (err) {
+      console.error('Error saving profile:', err);
+      setCustomToast({
+        message: `Terjadi kesalahan saat menyimpan profil: ${err instanceof Error ? err.message : String(err)}`,
+        type: 'error'
+      });
+    } finally {
+      setIsProfileSaving(false);
+    }
+  };
+
+  const handleCancelEditProfile = () => {
+    setIsProfileEditMode(false);
+    setProfileFormData(null);
+    setProfileSelectedSubjects([]);
+    setProfileSubjectSearch('');
+    setIsProfileSubjectPickerOpen(false);
+  };
+
+  useEffect(() => {
+    const loadMataPelajaranOptions = async () => {
+      try {
+        const { data, error } = await d1
+          .from('mata_pelajaran')
+          .select('*')
+          .order('mata_pelajaran', { ascending: true });
+
+        if (error) {
+          throw error;
+        }
+
+        const options = (data || [])
+          .map((row: any) => (row.mata_pelajaran || row.nama_mata_pelajaran || row.mapel || row.subject || '').trim())
+          .filter(Boolean);
+
+        const uniqueOptions = [...new Set(options)];
+        setMataPelajaranOptions(uniqueOptions);
+      } catch (err) {
+        console.error('Error loading mata_pelajaran options:', err);
+        setMataPelajaranOptions([]);
+      }
+    };
+
+    loadMataPelajaranOptions();
+  }, []);
+
+  const toggleProfileSubject = (subject: string) => {
+    const nextSubjects = profileSelectedSubjects.includes(subject)
+      ? profileSelectedSubjects.filter((item) => item !== subject)
+      : [...profileSelectedSubjects, subject];
+
+    setProfileSelectedSubjects(nextSubjects);
+    setProfileFormData((prev: any) => ({
+      ...(prev || {}),
+      mata_pelajaran: nextSubjects.join(', '),
+    }));
+  };
+
+  const filteredMataPelajaranOptions = mataPelajaranOptions.filter((subject) =>
+    subject.toLowerCase().includes(profileSubjectSearch.toLowerCase())
+  );
+
   const [isDarkMode, setIsDarkMode] = useState<boolean>(() => {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('theme');
@@ -175,7 +330,7 @@ export default function App() {
   }, [isDarkMode]);
 
   // Connection State
-  const [useSupabase, setUseSupabase] = useState<boolean>(true);
+  const [useD1, setUseD1] = useState<boolean>(true);
   const [dbStatus, setDbStatus] = useState<'disconnected' | 'testing' | 'connected' | 'error'>('disconnected');
   const [dbErrorMessage, setDbErrorMessage] = useState<string | null>(null);
 
@@ -216,9 +371,6 @@ export default function App() {
   const [nilaiSnbtUtbk, setNilaiSnbtUtbk] = useState<NilaiSnbtUtbk[]>([]);
   const [outsideServices, setOutsideServices] = useState<OutsideService[]>([]);
   const [permintaanPelayanan, setPermintaanPelayanan] = useState<PermintaanPelayanan[]>([]);
-  
-  // Notification state
-  const [unreadNotifCount, setUnreadNotifCount] = useState<number>(0);
 
   // Loading state
   const [isLoading, setIsLoading] = useState<boolean>(false);
@@ -253,9 +405,7 @@ export default function App() {
       setSelectedStudentData(null);
     }
     if (currentStudent?.nis) {
-      initOneSignal().then(() => {
-        setOneSignalUserNis(currentStudent.nis);
-      });
+      // OneSignal removed — no action required here for subscription linking
     }
   }, [currentStudent]);
 
@@ -308,7 +458,7 @@ export default function App() {
         }
       }
 
-      // Force re-fetch of all student records and schedules from Supabase
+      // Force re-fetch of all student records and schedules from D1
       setDataRefreshCounter(prev => prev + 1);
 
       await new Promise(resolve => setTimeout(resolve, 800));
@@ -324,6 +474,7 @@ export default function App() {
 
   const handleLogout = () => {
     localStorage.removeItem('rapor_siswa_session');
+    localStorage.removeItem('active_nis');
     setCurrentStudent(null);
     setSelectedStudentData(null);
     setSelectedStudentId('60-444-001-6');
@@ -373,13 +524,13 @@ export default function App() {
     setDeferredPrompt(null);
   };
 
-  // Test Connection to Supabase & Fetch Initial Data
-  const testSupabaseConnection = async (showNotifications = true) => {
+  // Test Connection to D1 & Fetch Initial Data
+  const testD1Connection = async (showNotifications = true) => {
     setDbStatus('testing');
     setDbErrorMessage(null);
     try {
       // Test fetching students from main data_siswa table
-      const { data: siswaData, error } = await supabase
+      const { data: siswaData, error } = await d1
         .from('data_siswa')
         .select('*');
 
@@ -396,7 +547,7 @@ export default function App() {
           semester: 'Ganjil'
         }));
         setStudentsList(mappedStudents);
-        setUseSupabase(true);
+        setUseD1(true);
         setDbStatus('connected');
         if (showNotifications) {
           showToast('Berhasil terhubung ke database! Data real-time aktif.', 'success');
@@ -404,7 +555,7 @@ export default function App() {
         return true;
       } else {
         // Connected but empty table
-        setUseSupabase(true);
+        setUseD1(true);
         setDbStatus('connected');
         if (showNotifications) {
           showToast('Terhubung ke database, namun tabel data_siswa masih kosong.', 'info');
@@ -415,8 +566,8 @@ export default function App() {
       console.warn('Gagal koneksi ke database:', err);
       setDbStatus('error');
       setDbErrorMessage(err.message || 'Koneksi gagal atau tabel di database belum dibuat.');
-      // Keep useSupabase as true since the user wants a direct connection
-      setUseSupabase(true);
+      // Keep useD1 as true since the user wants a direct connection
+      setUseD1(true);
       setStudentsList([]);
       if (showNotifications) {
         showToast(`Koneksi database gagal: ${err.message}`, 'error');
@@ -425,9 +576,9 @@ export default function App() {
     }
   };
 
-  // Automatically attempt Supabase connection on load
+  // Automatically attempt D1 connection on load
   useEffect(() => {
-    testSupabaseConnection(false);
+    testD1Connection(false);
   }, []);
 
   // Fetch student specific data when selectedStudentId changes or connection type changes
@@ -449,7 +600,7 @@ export default function App() {
         setSelectedStudentData(currentStudent);
       } else {
         try {
-          const { data: profileData, error: profileErr } = await supabase
+          const { data: profileData, error: profileErr } = await d1
             .from('data_siswa')
             .select('*')
             .eq('nis', selectedStudentId)
@@ -485,6 +636,11 @@ export default function App() {
           nisCandidates.push(patterned);
         }
       }
+      const siswaIdCandidates = [...new Set(
+        [selectedStudentData?.id, currentStudent?.id]
+          .filter(Boolean)
+          .map(String)
+      )];
 
       // 1. Initial cached dataset load for immediate offline availability
       try {
@@ -507,8 +663,28 @@ export default function App() {
         console.warn('Gagal membaca cache lokal:', cacheErr);
       }
 
-      // Supabase loading logic
+      // D1 loading logic
       try {
+        const loadByStudentIdentity = async (tableName: string) => {
+          const [nisResult, siswaResult] = await Promise.all([
+            d1.from(tableName).select('*').in('nis', nisCandidates).order('tanggal', { ascending: false }),
+            siswaIdCandidates.length > 0
+              ? d1.from(tableName).select('*').in('siswa_id', siswaIdCandidates).order('tanggal', { ascending: false })
+              : Promise.resolve({ data: [], error: null })
+          ]);
+
+          const rowsById = new Map<string, any>();
+          for (const row of [...(nisResult.data || []), ...(siswaResult.data || [])]) {
+            const rowKey = String(row.id ?? `${row.nis ?? ''}:${row.siswa_id ?? ''}:${row.tanggal ?? ''}`);
+            rowsById.set(rowKey, row);
+          }
+
+          return {
+            data: Array.from(rowsById.values()),
+            error: nisResult.error && siswaResult.error ? nisResult.error : null
+          };
+        };
+
         // Parallel fetches for tables
         const [
           pbRes, // perkembangan_belajar response
@@ -518,15 +694,15 @@ export default function App() {
           snbtRes,
           bookingRes
         ] = await Promise.all([
-          supabase.from('perkembangan_belajar').select('*').in('nis', nisCandidates).order('tanggal', { ascending: false }),
-          supabase.from('tambahan_pelayanan').select('*').in('nis', nisCandidates).order('tanggal', { ascending: false }),
-          supabase.from('nilai_evaluasi').select('*').in('nis', nisCandidates).order('tanggal', { ascending: false }),
-          supabase.from('nilai_standar').select('*').in('nis', nisCandidates).order('tanggal', { ascending: false }),
-          supabase.from('nilai_snbt_utbk').select('*').in('nis', nisCandidates).order('tanggal', { ascending: false }),
+          loadByStudentIdentity('perkembangan_belajar'),
+          d1.from('riwayat_pelayanan_siswa').select('*').in('nis', nisCandidates).order('tanggal', { ascending: false }),
+          d1.from('nilai_evaluasi').select('*').in('nis', nisCandidates).order('tanggal', { ascending: false }),
+          d1.from('nilai_standar').select('*').in('nis', nisCandidates).order('tanggal', { ascending: false }),
+          d1.from('nilai_snbt').select('*').in('nis', nisCandidates).order('tanggal', { ascending: false }),
           (async () => {
             const [kbmBookingRes, mainBookingRes] = await Promise.all([
-              supabaseKbm.from('permintaan_pelayanan').select('*').in('nis', nisCandidates).order('created_at', { ascending: false }),
-              supabase.from('permintaan_pelayanan').select('*').in('nis', nisCandidates).order('created_at', { ascending: false })
+              d1Kbm.from('permintaan_pelayanan').select('*').in('nis', nisCandidates).order('created_at', { ascending: false }),
+              d1.from('permintaan_pelayanan').select('*').in('nis', nisCandidates).order('created_at', { ascending: false })
             ]);
 
             const mapById = new Map();
@@ -569,9 +745,16 @@ export default function App() {
           localStorage.setItem(`rapor_booking_${selectedStudentId}`, JSON.stringify(bookingRes.data));
         }
 
-        if (pbRes.data && pbRes.data.length > 0) {
+        if (pbRes.error) {
+          console.warn('Gagal mengambil data presensi/perkembangan dari D1:', pbRes.error);
+        } else {
+          const progressRows = Array.isArray(pbRes.data) ? pbRes.data : [];
+
           // Map to AttendanceRecords
-          const mappedAttendance: Attendance[] = pbRes.data.map((row: any) => {
+          // Baris perkembangan tanpa kolom kehadiran tidak boleh dihitung sebagai Hadir.
+          const mappedAttendance: Attendance[] = progressRows
+            .filter((row: any) => String(row.kehadiran ?? '').trim().length > 0)
+            .map((row: any) => {
             let status: 'Hadir' | 'Sakit' | 'Izin' | 'Alpa' = 'Hadir';
             const rawKehadiran = (row.kehadiran || '').trim().toLowerCase();
             if (rawKehadiran.startsWith('h')) status = 'Hadir';
@@ -581,7 +764,7 @@ export default function App() {
             
             return {
               id: row.id,
-              student_id: row.nis || selectedStudentId,
+              student_id: row.nis || row.siswa_id || selectedStudentId,
               date: row.tanggal,
               subject: row.mata_pelajaran || 'Umum',
               status,
@@ -592,7 +775,7 @@ export default function App() {
           localStorage.setItem(`rapor_attendance_${selectedStudentId}`, JSON.stringify(mappedAttendance));
 
           // Map to LearningProgress
-          const mappedProgress: LearningProgress[] = pbRes.data.map((row: any) => {
+          const mappedProgress: LearningProgress[] = progressRows.map((row: any) => {
             let status: 'Sangat Baik' | 'Baik' | 'Cukup' | 'Butuh Perhatian' = 'Baik';
             const pct = row.prosen_penguasaan != null ? Number(row.prosen_penguasaan) : null;
             if (pct !== null) {
@@ -613,7 +796,7 @@ export default function App() {
 
             return {
               id: row.id,
-              student_id: row.nis || selectedStudentId,
+              student_id: row.nis || row.siswa_id || selectedStudentId,
               date: row.tanggal,
               subject: row.mata_pelajaran || 'Umum',
               progress_title: row.materi_sub_bab || 'Materi Pembelajaran',
@@ -631,14 +814,14 @@ export default function App() {
         // Save last sync timestamp for cache freshness check
         localStorage.setItem('last_rapor_sync_timestamp', Date.now().toString());
       } catch (err: any) {
-        console.warn('Gagal memuat data dari Supabase (Menggunakan data tersimpan offline jika ada):', err);
+        console.warn('Gagal memuat data dari D1 (Menggunakan data tersimpan offline jika ada):', err);
       } finally {
         setIsLoading(false);
       }
     };
 
     loadStudentData();
-  }, [selectedStudentId, useSupabase, currentStudent, dataRefreshCounter]);
+  }, [selectedStudentId, useD1, currentStudent, dataRefreshCounter]);
 
   // Periodic Cache Update every 15 minutes (900,000ms) automatically
   useEffect(() => {
@@ -674,161 +857,7 @@ export default function App() {
     };
   }, []);
 
-  // Supabase Realtime Subscription for automatic push notification & UI refresh when new presensi/data is added
-  useEffect(() => {
-    if (!selectedStudentId) return;
 
-    const activeNis = String(selectedStudentId || currentStudent?.nis || '').trim();
-
-    const channel = supabase
-      .channel(`realtime-db-changes-${activeNis}`)
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'perkembangan_belajar'
-        },
-        (payload) => {
-          const newRow = payload.new as any;
-          if (!newRow) return;
-
-          const rowNis = String(newRow.nis || newRow.nisn || '').trim();
-          if (rowNis && activeNis && rowNis !== activeNis) {
-            console.log('Ignore realtime event for different NIS:', rowNis, 'vs current:', activeNis);
-            return;
-          }
-
-          console.log('Realtime presensi/perkembangan terdeteksi:', newRow);
-          
-          if (newRow.kehadiran) {
-            sendWebPushNotification('📋 Update Presensi', {
-              body: 'Data presensi Anda telah diperbarui. Silakan cek detail presensi terbaru di aplikasi.',
-              tag: `presensi-${newRow.id || Date.now()}`
-            });
-            showToast('📋 Update Presensi telah diterima', 'info');
-          } else {
-            sendWebPushNotification('📈 Update Perkembangan', {
-              body: 'Perkembangan belajar Anda telah diperbarui. Buka aplikasi untuk melihat informasi terbaru.',
-              tag: `perkembangan-${newRow.id || Date.now()}`
-            });
-            showToast('📈 Update Perkembangan telah diterima', 'info');
-          }
-
-          setUnreadNotifCount(prev => prev + 1);
-          setDataRefreshCounter(prev => prev + 1);
-        }
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'nilai_evaluasi'
-        },
-        (payload) => {
-          const newRow = payload.new as any;
-          if (!newRow) return;
-
-          const rowNis = String(newRow.nis || newRow.nisn || '').trim();
-          if (rowNis && activeNis && rowNis !== activeNis) return;
-
-          console.log('Realtime nilai baru terdeteksi:', newRow);
-          
-          sendWebPushNotification('📝 Nilai Baru Tersedia', {
-            body: 'Nilai Anda telah diperbarui. Silakan buka aplikasi untuk melihat detail Nilai Evaluasi Belajar, Nilai Standar, atau Nilai UTBK terbaru.',
-            tag: `nilai-${newRow.id || Date.now()}`
-          });
-
-          showToast('📝 Nilai baru telah tersedia', 'info');
-          setUnreadNotifCount(prev => prev + 1);
-          setDataRefreshCounter(prev => prev + 1);
-        }
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'permintaan_pelayanan'
-        },
-        (payload) => {
-          const newRow = payload.new as any;
-          if (!newRow) return;
-
-          const rowNis = String(newRow.nis || newRow.nisn || '').trim();
-          if (rowNis && activeNis && rowNis !== activeNis) return;
-
-          console.log('Realtime permintaan_pelayanan terdeteksi di DB utama:', newRow);
-          const status = (newRow.status || '').toLowerCase();
-          if (status === 'disetujui' || status === 'approved') {
-            sendWebPushNotification('✅ Reservasi Disetujui', {
-              body: 'Permintaan Reservasi Jadwal Layanan Anda telah disetujui. Silakan buka aplikasi untuk melihat detail jadwal.',
-              tag: `reservasi-${newRow.id || Date.now()}`
-            });
-            showToast('✅ Reservasi Layanan Disetujui', 'success');
-          } else if (status === 'ditolak' || status === 'rejected') {
-            sendWebPushNotification('❌ Reservasi Ditolak', {
-              body: 'Maaf, permintaan Reservasi Jadwal Layanan Anda ditolak. Silakan buka aplikasi untuk informasi lebih lanjut atau ajukan reservasi kembali.',
-              tag: `reservasi-${newRow.id || Date.now()}`
-            });
-            showToast('❌ Reservasi Layanan Ditolak', 'error');
-          } else {
-            showToast('📋 Perubahan Reservasi Layanan', 'info');
-          }
-
-          setUnreadNotifCount(prev => prev + 1);
-          setDataRefreshCounter(prev => prev + 1);
-        }
-      )
-      .subscribe((status) => {
-        console.log(`[Supabase Realtime] Status koneksi (${activeNis}):`, status);
-      });
-
-    const channelKbm = supabaseKbm
-      .channel(`realtime-kbm-changes-${activeNis}`)
-      .on(
-        'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'permintaan_pelayanan'
-        },
-        (payload) => {
-          const newRow = payload.new as any;
-          if (!newRow) return;
-
-          const rowNis = String(newRow.nis || newRow.nisn || '').trim();
-          if (rowNis && activeNis && rowNis !== activeNis) return;
-
-          const status = (newRow.status || '').toLowerCase();
-          if (status === 'disetujui' || status === 'approved') {
-            sendWebPushNotification('✅ Reservasi Disetujui', {
-              body: 'Permintaan Reservasi Jadwal Layanan Anda telah disetujui. Silakan buka aplikasi untuk melihat detail jadwal.',
-              tag: `reservasi-${newRow.id || Date.now()}`
-            });
-            showToast('✅ Reservasi Layanan Disetujui', 'success');
-          } else if (status === 'ditolak' || status === 'rejected') {
-            sendWebPushNotification('❌ Reservasi Ditolak', {
-              body: 'Maaf, permintaan Reservasi Jadwal Layanan Anda ditolak. Silakan buka aplikasi untuk informasi lebih lanjut atau ajukan reservasi kembali.',
-              tag: `reservasi-${newRow.id || Date.now()}`
-            });
-            showToast('❌ Reservasi Layanan Ditolak', 'error');
-          }
-
-          setUnreadNotifCount(prev => prev + 1);
-          setDataRefreshCounter(prev => prev + 1);
-        }
-      )
-      .subscribe((status) => {
-        console.log(`[SupabaseKbm Realtime] Status koneksi (${activeNis}):`, status);
-      });
-
-    return () => {
-      supabase.removeChannel(channel);
-      supabaseKbm.removeChannel(channelKbm);
-    };
-  }, [selectedStudentId, currentStudent?.nis]);
 
   // Fetch KBM Reguler and Khusus schedule based on active student profile
   useEffect(() => {
@@ -844,8 +873,8 @@ export default function App() {
       
       setIsKbmLoading(true);
       try {
-        let queryReg = supabaseKbm.from('jadwal_reguler').select('*');
-        let queryKhusus = supabaseKbm.from('jadwal_khusus').select('*');
+        let queryReg = d1Kbm.from('jadwal_reguler').select('*');
+        let queryKhusus = d1Kbm.from('jadwal_khusus').select('*');
         
         // Match with the active student's profile data
         const activeCabang = selectedStudentData?.cabang || currentStudent.cabang;
@@ -877,15 +906,45 @@ export default function App() {
         const rawKhususSchedules = (khususRes.data || []);
         
         // Parse the student's enrolled subjects from their profile
+        const normalizeSubject = (value: any) => String(value ?? '').trim().toLowerCase().replace(/\s+/g, ' ');
         const studentSubjects = (selectedStudentData?.mata_pelajaran || currentStudent.mata_pelajaran)
-          ? (selectedStudentData?.mata_pelajaran || currentStudent.mata_pelajaran).split(',').map(s => s.trim().toLowerCase()).filter(Boolean)
+          ? (selectedStudentData?.mata_pelajaran || currentStudent.mata_pelajaran)
+              .split(/[;,]/)
+              .map((s: string) => normalizeSubject(s))
+              .filter(Boolean)
           : [];
 
-        let mappedRegSchedules: RegularSchedule[] = rawRegSchedules.map((row: any) => {
+        const isRegularScheduleMatch = (row: any) => {
+          const rowJenis = normalizeSubject(row?.jenis_kbm || row?.jenis || row?.tipe || '');
+          if (rowJenis && rowJenis !== 'reguler') {
+            return false;
+          }
+
+          if (!studentSubjects.length) return true;
+
+          const subjectCandidates = [
+            row?.mata_pelajaran,
+            row?.mapel,
+            row?.subject,
+            row?.nama_mata_pelajaran,
+            row?.nama_pelajaran
+          ].filter(Boolean);
+
+          if (!subjectCandidates.length) return true;
+
+          return subjectCandidates.some((candidate) => studentSubjects.includes(normalizeSubject(candidate)));
+        };
+
+        const filteredRegSchedules = (rawRegSchedules || []).filter(isRegularScheduleMatch);
+
+        let mappedRegSchedules: RegularSchedule[] = filteredRegSchedules.map((row: any) => {
           const waktuParts = (row.waktu || '').split('-');
           const time_start = waktuParts[0]?.trim() || '';
           const time_end = waktuParts[1]?.trim() || '';
-          
+
+          const subjectName = row.mata_pelajaran || row.mapel || row.subject || 'Mata Pelajaran';
+          const teacherName = row.nama_pengajar || row.pengajar || 'Pengajar';
+
           let dayName = 'Senin';
           if (row.tanggal) {
             const date = new Date(row.tanggal);
@@ -899,10 +958,10 @@ export default function App() {
             id: row.id,
             student_id: selectedStudentId,
             day: dayName,
-            subject: row.mapel || 'Mata Pelajaran',
+            subject: subjectName,
             time_start,
             time_end,
-            teacher: row.pengajar || 'Pengajar',
+            teacher: teacherName,
             classroom: row.sekolah || '',
             tanggal: row.tanggal,
             kelas: row.kelas
@@ -966,60 +1025,7 @@ export default function App() {
     loadKbmSchedules();
   }, [selectedStudentId, currentStudent, selectedStudentData, dataRefreshCounter]);
 
-  // Automatic 2-Hour Schedule Reminder Notification (Client-Side without Edge Functions)
-  useEffect(() => {
-    if (!regularSchedules.length && !additionalSchedules.length) return;
 
-    const checkScheduleReminders = () => {
-      const now = new Date();
-      const todayStr = now.toISOString().split('T')[0];
-      const todayDayIndex = now.getDay();
-      const daysMap = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
-      const todayName = daysMap[todayDayIndex];
-
-      const checkItem = (item: any, isKhusus: boolean) => {
-        const timeStart = item.time_start || '';
-        const timeEnd = item.time_end || '';
-        if (!timeStart) return;
-
-        // For regular check day name, for additional check tanggal
-        if (isKhusus && item.tanggal && item.tanggal !== todayStr) return;
-        if (!isKhusus && item.day && !item.day.toLowerCase().includes(todayName.toLowerCase())) return;
-
-        const [hours, minutes] = timeStart.split(':').map(Number);
-        if (isNaN(hours) || isNaN(minutes)) return;
-
-        const classTime = new Date();
-        classTime.setHours(hours, minutes, 0, 0);
-
-        const diffMinutes = (classTime.getTime() - now.getTime()) / (1000 * 60);
-
-        // Send notification if class starts within 2 hours (0 to 120 minutes)
-        const notifKey = `reminded_jadwal_${item.id || item.subject}_${todayStr}`;
-        if (diffMinutes > 0 && diffMinutes <= 120 && !localStorage.getItem(notifKey)) {
-          const mapel = item.subject || 'Mata Pelajaran';
-          const jamMulai = timeStart;
-          const jamSelesai = timeEnd || 'Selesai';
-          const cabang = currentStudent?.cabang || 'Cabang Utama';
-
-          sendWebPushNotification('📚 Pengingat Jadwal KBM', {
-            body: `Halo! Jangan lupa, kelas ${mapel} akan dimulai dalam 2 jam.\n\n🕒 Jam: ${jamMulai} - ${jamSelesai}\n📖 Mata Pelajaran: ${mapel}\n🏢 Cabang: ${cabang}\n\nPastikan Anda telah mempersiapkan diri dan hadir tepat waktu.`,
-            tag: notifKey
-          });
-
-          localStorage.setItem(notifKey, 'true');
-          showToast(`📚 Pengingat Jadwal KBM: ${mapel} (${jamMulai})`, 'info');
-        }
-      };
-
-      regularSchedules.forEach(s => checkItem(s, false));
-      additionalSchedules.forEach(s => checkItem(s, true));
-    };
-
-    checkScheduleReminders();
-    const interval = setInterval(checkScheduleReminders, 10 * 60 * 1000); // Check every 10 minutes
-    return () => clearInterval(interval);
-  }, [regularSchedules, additionalSchedules, currentStudent]);
 
   // Handle manual parent login/search by NISN
   const handleStudentSearch = (e: React.FormEvent) => {
@@ -1108,11 +1114,20 @@ export default function App() {
             }`}
           >
             {customToast.type === 'success' ? <CheckCircle className="h-5 w-5 text-emerald-600 shrink-0" /> : <AlertCircle className="h-5 w-5 text-rose-600 shrink-0" />}
-            <p className="text-sm font-medium">{customToast.message}</p>
+            <p className="text-sm font-medium flex-1">{customToast.message}</p>
+            <button
+              type="button"
+              onClick={() => setCustomToast(null)}
+              aria-label="Tutup notifikasi"
+              title="Tutup notifikasi"
+              className="ml-auto p-1 rounded-lg hover:bg-black/5 transition cursor-pointer shrink-0"
+            >
+              <X className="h-4 w-4" />
+            </button>
           </div>
         )}
         <Login 
-          onLoginSuccess={(student, fromSupabase) => {
+          onLoginSuccess={(student, fromD1) => {
             // Reset previous student data states
             setAttendanceRecords([]);
             setLearningProgress([]);
@@ -1129,18 +1144,19 @@ export default function App() {
             setSelectedStudentData(student);
             setSelectedStudentId(student.nis);
             localStorage.setItem('rapor_siswa_session', JSON.stringify(student));
+            localStorage.setItem('active_nis', String(student.nis || ''));
 
             // Force immediate data reload for the logged in student
             setDataRefreshCounter(prev => prev + 1);
 
             showToast(`Berhasil masuk sebagai ${student.nama}`, 'success');
           }}
-          useSupabase={useSupabase}
+          useD1={useD1}
           dbStatus={dbStatus}
           onToggleDemoMode={() => {
-            const nextMode = !useSupabase;
-            setUseSupabase(nextMode);
-            showToast(`Beralih ke ${nextMode ? 'Database Supabase' : 'Mode Demo Lokal'}`, 'info');
+            const nextMode = !useD1;
+            setUseD1(nextMode);
+            showToast(`Beralih ke ${nextMode ? 'Database Cloudflare D1' : 'Mode Demo Lokal'}`, 'info');
           }}
         />
       </div>
@@ -1162,7 +1178,16 @@ export default function App() {
           }`}
         >
           {customToast.type === 'success' ? <CheckCircle className="h-5 w-5 text-emerald-600 shrink-0" /> : <AlertCircle className="h-5 w-5 text-rose-600 shrink-0" />}
-          <p className="text-sm font-medium">{customToast.message}</p>
+          <p className="text-sm font-medium flex-1">{customToast.message}</p>
+          <button
+            type="button"
+            onClick={() => setCustomToast(null)}
+            aria-label="Tutup notifikasi"
+            title="Tutup notifikasi"
+            className="ml-auto p-1 rounded-lg hover:bg-black/5 transition cursor-pointer shrink-0"
+          >
+            <X className="h-4 w-4" />
+          </button>
         </div>
       )}
 
@@ -1188,7 +1213,7 @@ export default function App() {
               <h1 className="text-lg font-bold tracking-tight text-slate-900 dark:text-slate-100 leading-tight">Rapor Kita</h1>
               <p className="text-xs text-slate-500 dark:text-slate-400 font-medium flex items-center gap-1.5">
                 {isOnline ? 'Pantauan Real-Time' : 'Mode Offline (Tersimpan)'}
-                <span className={`inline-block w-2 h-2 rounded-full ${isOnline ? (useSupabase ? 'bg-emerald-500 animate-pulse' : 'bg-amber-400') : 'bg-amber-500'}`}></span>
+                <span className={`inline-block w-2 h-2 rounded-full ${isOnline ? (useD1 ? 'bg-emerald-500 animate-pulse' : 'bg-amber-400') : 'bg-amber-500'}`}></span>
               </p>
             </div>
           </div>
@@ -1206,22 +1231,6 @@ export default function App() {
               <span>{isRefreshing ? 'Memperbarui...' : 'Perbarui Data'}</span>
             </button>
 
-            {/* Notification Center Button */}
-            <button
-              id="btn-notifications-desktop"
-              onClick={() => setIsNotificationModalOpen(true)}
-              title="Pusat Notifikasi"
-              className="relative p-2 bg-slate-100 dark:bg-slate-800 hover:bg-indigo-50 dark:hover:bg-indigo-950/60 text-slate-700 dark:text-slate-200 hover:text-indigo-600 dark:hover:text-indigo-400 rounded-xl border border-slate-200/60 dark:border-slate-700 transition duration-150 cursor-pointer"
-            >
-              <Bell className={`h-4 w-4 shrink-0 transition-transform ${unreadNotifCount > 0 ? 'animate-bell-wiggle text-indigo-600 dark:text-indigo-400' : ''}`} />
-              {unreadNotifCount > 0 && (
-                <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-rose-500"></span>
-                </span>
-              )}
-            </button>
-
             {/* Profile, Settings & Logout Button for Authenticated Student */}
             <button
               id="btn-profile-desktop"
@@ -1237,13 +1246,27 @@ export default function App() {
             </button>
 
             <button
+              id="btn-notifications-desktop"
+              onClick={() => setIsNotificationModalOpen(true)}
+              title="Pusat Notifikasi"
+              className="relative p-2 bg-slate-100 dark:bg-slate-800 hover:bg-indigo-50 dark:hover:bg-indigo-950/60 text-slate-700 dark:text-slate-200 hover:text-indigo-600 dark:hover:text-indigo-400 rounded-xl border border-slate-200/60 dark:border-slate-700 transition duration-150 cursor-pointer"
+            >
+              <Bell className={`h-4 w-4 shrink-0 transition-transform ${unreadNotifCount > 0 ? 'animate-bell-wiggle text-indigo-600 dark:text-indigo-400' : ''}`} />
+              {unreadNotifCount > 0 && (
+                <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-rose-500"></span>
+                </span>
+              )}
+            </button>
+
+            <button
               id="btn-settings-desktop"
               onClick={() => setIsSettingsModalOpen(true)}
               title="Pengaturan Aplikasi"
-              className="flex items-center gap-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200/80 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold py-2 px-3.5 rounded-xl border border-slate-200/60 dark:border-slate-700 transition duration-150 cursor-pointer"
+              className="flex items-center justify-center bg-slate-100 dark:bg-slate-800 hover:bg-slate-200/80 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 p-2 rounded-xl border border-slate-200/60 dark:border-slate-700 transition duration-150 cursor-pointer"
             >
               <Settings className="h-4 w-4 shrink-0 text-slate-600 dark:text-slate-300" />
-              <span>Pengaturan</span>
             </button>
 
             <button
@@ -1311,13 +1334,6 @@ export default function App() {
                 >
                   <RefreshCw className={`h-4 w-4 text-sky-600 ${isRefreshing ? 'animate-spin' : ''}`} />
                   Perbarui Data
-                </button>
-                <button
-                  onClick={() => { setIsNotificationModalOpen(true); setIsMobileMenuOpen(false); }}
-                  className="w-full text-left px-4 py-2 text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-indigo-50 hover:text-indigo-700 flex items-center gap-2"
-                >
-                  <Bell className="h-4 w-4 text-indigo-600" />
-                  Notifikasi Baru
                 </button>
                 <button
                   onClick={() => { setShowProfileModal(true); setIsMobileMenuOpen(false); }}
@@ -1944,6 +1960,19 @@ export default function App() {
                     <div className="text-right">
                       <span className="text-[11px] font-extrabold text-slate-400 tracking-widest uppercase block mb-1 text-right">JENJANG STUDI</span>
                       <h3 className="text-xl font-black text-red-600 leading-none">{(selectedStudentData || currentStudent)?.jenjang_studi || '2 SMA'}</h3>
+                    </div>
+                  </div>
+
+                  {/* TIPS / INFORMATION BOX */}
+                  <div className="bg-blue-50 border border-blue-200 rounded-2xl p-4 mb-6 flex items-start gap-3">
+                    <div className="text-blue-600 mt-0.5 shrink-0">
+                      <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                      </svg>
+                    </div>
+                    <div className="flex-1">
+                      <p className="text-xs font-bold text-blue-800">💡 Catatan Penting</p>
+                      <p className="text-xs text-blue-700 mt-1">Pastikan Mata Pelajaran di profil sudah di isi, untuk menampilkan jadwal reguler.</p>
                     </div>
                   </div>
 
@@ -2577,6 +2606,8 @@ export default function App() {
                     const statusStr = (item.status || 'Menunggu').toLowerCase();
                     const isApproved = statusStr.includes('setuju') || statusStr.includes('acc');
                     const isRejected = statusStr.includes('tolak') || statusStr.includes('batal');
+                    const bookingDate = item.tanggal_pengajuan || item.tanggal || '';
+                    const bookingTeacher = item.nama_pengajar || item.pengajar || 'Pengajar';
 
                     return (
                       <div key={idx} className="bg-slate-50 border border-slate-100 p-4 rounded-2xl flex flex-col sm:flex-row sm:items-start justify-between gap-3 hover:shadow-xs transition">
@@ -2585,13 +2616,13 @@ export default function App() {
                             <span className="bg-indigo-50 text-indigo-800 text-[10px] font-black uppercase px-2.5 py-0.5 rounded-md border border-indigo-100">
                               {item.mata_pelajaran}
                             </span>
-                            <span className="text-xs text-slate-400 font-bold">Rencana: {formatTanggalIndo(item.tanggal, { withDayName: true })}</span>
+                            <span className="text-xs text-slate-400 font-bold">Rencana: {bookingDate ? formatTanggalIndo(bookingDate, { withDayName: true }) : '-'}</span>
                           </div>
                           <p className="text-xs text-slate-700 dark:text-slate-300 font-semibold leading-relaxed">
                             {item.keperluan || 'Pengajuan Jadwal Layanan'}
                           </p>
                           <div className="flex items-center gap-3 text-[11px] font-bold text-slate-400">
-                            <span>Pengajar Diharapkan: <strong className="text-slate-700 dark:text-slate-300">{item.pengajar}</strong></span>
+                            <span>Pengajar Diharapkan: <strong className="text-slate-700 dark:text-slate-300">{bookingTeacher}</strong></span>
                             {item.cabang && <span>• Cabang: <strong className="text-slate-700 dark:text-slate-300">{item.cabang}</strong></span>}
                           </div>
 
@@ -2599,7 +2630,7 @@ export default function App() {
                             <div className="mt-1 p-2 bg-emerald-50/70 border border-emerald-100 rounded-xl text-[11px] text-emerald-800 font-bold flex items-center gap-2">
                               <CheckCircle className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
                               <span>
-                                Disetujui untuk tanggal <strong>{formatTanggalIndo(item.tanggal_disetujui || item.tanggal, { withDayName: true })}</strong> {item.jam_disetujui && `jam ${item.jam_disetujui}`}
+                                Disetujui untuk tanggal <strong>{formatTanggalIndo(item.tanggal_disetujui || bookingDate || item.tanggal || '', { withDayName: true })}</strong> {item.jam_disetujui && `jam ${item.jam_disetujui}`}
                               </span>
                             </div>
                           )}
@@ -2822,14 +2853,6 @@ export default function App() {
           >
             {/* Header Banner */}
             <div className="bg-gradient-to-r from-sky-600 to-indigo-700 p-6 text-white relative">
-              <button 
-                id="btn-close-profile-modal"
-                onClick={() => setShowProfileModal(false)}
-                className="absolute top-4 right-4 text-sky-100 hover:text-white hover:bg-white/10 p-2 rounded-xl transition cursor-pointer"
-              >
-                <X className="h-5 w-5" />
-              </button>
-              
               <div className="flex items-center gap-4 mt-2">
                 <div className="w-16 h-16 rounded-2xl bg-white/10 text-white font-extrabold text-2xl flex items-center justify-center border border-white/20 shadow-inner shrink-0">
                   {currentStudent?.nama ? currentStudent.nama.split(' ').slice(0, 2).map(n => n[0]).join('') : 'S'}
@@ -2841,7 +2864,15 @@ export default function App() {
                     NIS: {currentStudent?.nis}
                   </p>
                 </div>
-                <div className="shrink-0">
+                <div className="shrink-0 flex flex-col gap-2">
+                  {!isProfileEditMode && (
+                    <button
+                      onClick={handleEditProfile}
+                      className="bg-white/20 hover:bg-white/30 text-white text-[10px] font-extrabold px-2.5 py-1.5 rounded-lg border border-white/30 transition"
+                    >
+                      ✎ Edit
+                    </button>
+                  )}
                   <button
                     onClick={() => setIsDarkMode(!isDarkMode)}
                     className={`relative inline-flex h-7 w-12 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none shadow-inner ${isDarkMode ? 'bg-indigo-900/60 border-indigo-900/60' : 'bg-white/20 border-white/10'}`}
@@ -2858,100 +2889,295 @@ export default function App() {
             <div className="p-6 space-y-4 max-h-[60vh] overflow-y-auto">
               <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100 dark:border-slate-700 pb-2">Informasi Akademik & Pribadi</h4>
               
+              {/* NAMA LENGKAP - EDITABLE */}
+              <div>
+                <label className="text-[9px] font-extrabold uppercase text-slate-400 block mb-0.5">Nama Lengkap</label>
+                {isProfileEditMode ? (
+                  <input
+                    type="text"
+                    value={profileFormData?.nama_lengkap || ''}
+                    onChange={(e) => setProfileFormData({ ...profileFormData, nama_lengkap: e.target.value })}
+                    className="w-full bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl px-3 py-2 text-xs text-slate-800 dark:text-slate-200 font-medium focus:outline-none focus:ring-2 focus:ring-sky-500"
+                    placeholder="Nama lengkap siswa"
+                  />
+                ) : (
+                  <span className="text-xs font-bold text-slate-800 dark:text-slate-200">{currentStudent?.nama_lengkap || currentStudent?.nama || '-'}</span>
+                )}
+              </div>
+              
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div className="p-3 bg-slate-50 dark:bg-slate-700/50 rounded-xl border border-slate-100/80 dark:border-slate-600/50">
-                  <span className="text-[9px] font-extrabold uppercase text-slate-400 block mb-0.5">Asal Sekolah</span>
-                  <span className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5 flex-wrap">
-                    <GraduationCap className="h-3.5 w-3.5 text-sky-500 shrink-0" />
-                    {currentStudent?.asal_sekolah || '-'}
-                  </span>
+                {/* ASAL SEKOLAH - EDITABLE */}
+                <div>
+                  <label className="text-[9px] font-extrabold uppercase text-slate-400 block mb-0.5">Asal Sekolah</label>
+                  {isProfileEditMode ? (
+                    <input
+                      type="text"
+                      value={profileFormData?.asal_sekolah || ''}
+                      onChange={(e) => setProfileFormData({ ...profileFormData, asal_sekolah: e.target.value })}
+                      className="w-full bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl px-3 py-2 text-xs text-slate-800 dark:text-slate-200 font-medium focus:outline-none focus:ring-2 focus:ring-sky-500"
+                      placeholder="Asal sekolah"
+                    />
+                  ) : (
+                    <span className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                      <GraduationCap className="h-3.5 w-3.5 text-sky-500 shrink-0" />
+                      {currentStudent?.asal_sekolah || '-'}
+                    </span>
+                  )}
                 </div>
 
-                <div className="p-3 bg-slate-50 dark:bg-slate-700/50 rounded-xl border border-slate-100/80 dark:border-slate-600/50">
-                  <span className="text-[9px] font-extrabold uppercase text-slate-400 block mb-0.5">Jenjang Studi</span>
-                  <span className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5 flex-wrap">
+                {/* JENJANG STUDI - READ ONLY */}
+                <div>
+                  <label className="text-[9px] font-extrabold uppercase text-slate-400 block mb-0.5">Jenjang Studi</label>
+                  <span className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
                     <BookOpen className="h-3.5 w-3.5 text-sky-500 shrink-0" />
                     {currentStudent?.jenjang_studi || 'SMA'}
                   </span>
                 </div>
 
-                <div className="p-3 bg-slate-50 dark:bg-slate-700/50 rounded-xl border border-slate-100/80 dark:border-slate-600/50">
-                  <span className="text-[9px] font-extrabold uppercase text-slate-400 block mb-0.5">Kelompok Kelas</span>
-                  <span className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5 flex-wrap">
+                {/* KELOMPOK KELAS - READ ONLY */}
+                <div>
+                  <label className="text-[9px] font-extrabold uppercase text-slate-400 block mb-0.5">Kelompok Kelas</label>
+                  <span className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
                     <Sliders className="h-3.5 w-3.5 text-sky-500 shrink-0" />
                     {currentStudent?.kelompok_kelas || 'Umum'}
                   </span>
                 </div>
 
-                <div className="p-3 bg-slate-50 dark:bg-slate-700/50 rounded-xl border border-slate-100/80 dark:border-slate-600/50">
-                  <span className="text-[9px] font-extrabold uppercase text-slate-400 block mb-0.5">Cabang</span>
-                  <span className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5 flex-wrap">
+                {/* CABANG - READ ONLY */}
+                <div>
+                  <label className="text-[9px] font-extrabold uppercase text-slate-400 block mb-0.5">Cabang</label>
+                  <span className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
                     <MapPin className="h-3.5 w-3.5 text-sky-500 shrink-0" />
                     {currentStudent?.cabang || 'Jakarta Selatan'}
                   </span>
                 </div>
 
-                <div className="p-3 bg-slate-50 dark:bg-slate-700/50 rounded-xl border border-slate-100/80 dark:border-slate-600/50 sm:col-span-2">
-                  <span className="text-[9px] font-extrabold uppercase text-slate-400 block mb-0.5">Mata Pelajaran Yang Dipilih</span>
-                  <span className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5 flex-wrap">
-                    <BookOpen className="h-3.5 w-3.5 text-indigo-500 shrink-0" />
-                    <span className="bg-indigo-50 dark:bg-indigo-500/20 text-indigo-700 dark:text-indigo-300 text-[10px] font-extrabold px-2 py-0.5 rounded-md border border-indigo-100 dark:border-indigo-500/30">
-                      {currentStudent?.mata_pelajaran || 'Matematika, Fisika, Kimia, Biologi'}
+                {/* MATA PELAJARAN - EDITABLE */}
+                <div className="sm:col-span-2">
+                  <label className="text-[9px] font-extrabold uppercase text-slate-400 block mb-0.5">Mata Pelajaran Yang Dipilih</label>
+                  {isProfileEditMode ? (
+                    <div className="space-y-3">
+                      <button
+                        type="button"
+                        onClick={() => setIsProfileSubjectPickerOpen((prev) => !prev)}
+                        className="w-full flex flex-wrap gap-2 rounded-2xl border border-sky-300 bg-sky-50/60 dark:bg-slate-700/80 dark:border-sky-700 p-2 min-h-[44px] text-left"
+                      >
+                        {profileSelectedSubjects.length > 0 ? (
+                          profileSelectedSubjects.map((subject) => (
+                            <span
+                              key={subject}
+                              className="inline-flex items-center gap-2 rounded-xl border border-sky-400 bg-sky-100 px-2.5 py-1.5 text-[11px] font-extrabold text-sky-700"
+                            >
+                              {subject}
+                            </span>
+                          ))
+                        ) : (
+                          <span className="text-[11px] text-slate-400">Klik untuk memilih mata pelajaran</span>
+                        )}
+                      </button>
+
+                      {isProfileSubjectPickerOpen && (
+                        <div className="rounded-2xl border border-sky-300 bg-white dark:bg-slate-800 p-2 shadow-inner">
+                          <div className="flex items-center gap-2 rounded-xl border border-sky-300 px-3 py-2 text-slate-500 dark:text-slate-300 mb-2">
+                            <Search className="h-4 w-4" />
+                            <input
+                              value={profileSubjectSearch}
+                              onChange={(e) => setProfileSubjectSearch(e.target.value)}
+                              placeholder="Cari..."
+                              className="w-full bg-transparent text-xs text-slate-700 dark:text-slate-200 outline-none placeholder:text-slate-400"
+                            />
+                          </div>
+
+                          <div className="flex items-center justify-between gap-2 pb-2 text-[10px] font-bold text-slate-500 dark:text-slate-300">
+                            <span>{profileSelectedSubjects.length} dari {mataPelajaranOptions.length} dipilih</span>
+                            <div className="flex gap-2">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const allSelected = [...new Set(mataPelajaranOptions)];
+                                  setProfileSelectedSubjects(allSelected);
+                                  setProfileFormData((prev: any) => ({
+                                    ...(prev || {}),
+                                    mata_pelajaran: allSelected.join(', '),
+                                  }));
+                                }}
+                                className="text-sky-600 hover:text-sky-700 font-extrabold"
+                              >
+                                Pilih Semua
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setProfileSelectedSubjects([]);
+                                  setProfileFormData((prev: any) => ({
+                                    ...(prev || {}),
+                                    mata_pelajaran: '',
+                                  }));
+                                }}
+                                className="text-rose-600 hover:text-rose-700 font-extrabold"
+                              >
+                                Hapus Semua
+                              </button>
+                            </div>
+                          </div>
+
+                          <div className="max-h-64 overflow-y-auto space-y-1 pr-1">
+                            {filteredMataPelajaranOptions.length > 0 ? (
+                              filteredMataPelajaranOptions.map((subject) => {
+                                const isSelected = profileSelectedSubjects.includes(subject);
+                                return (
+                                  <button
+                                    key={subject}
+                                    type="button"
+                                    onClick={() => toggleProfileSubject(subject)}
+                                    className={`w-full flex items-center justify-between rounded-xl px-3 py-2 text-left text-sm font-bold transition ${
+                                      isSelected
+                                        ? 'bg-sky-100 text-sky-800 border border-sky-300'
+                                        : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 border border-transparent'
+                                    }`}
+                                  >
+                                    <span>{subject}</span>
+                                    <span className={`inline-flex h-5 w-5 items-center justify-center rounded-md border ${
+                                      isSelected
+                                        ? 'border-sky-500 bg-sky-500 text-white'
+                                        : 'border-slate-300 bg-white text-slate-500'
+                                    }`}>
+                                      {isSelected ? '✓' : ''}
+                                    </span>
+                                  </button>
+                                );
+                              })
+                            ) : (
+                              <div className="text-xs text-slate-400 py-3 text-center">Tidak ada mata pelajaran ditemukan.</div>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <span className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5 flex-wrap">
+                      <BookOpen className="h-3.5 w-3.5 text-indigo-500 shrink-0" />
+                      <span className="bg-indigo-50 dark:bg-indigo-500/20 text-indigo-700 dark:text-indigo-300 text-[10px] font-extrabold px-2 py-0.5 rounded-md border border-indigo-100 dark:border-indigo-500/30">
+                        {currentStudent?.mata_pelajaran || 'Matematika, Fisika, Kimia, Biologi'}
+                      </span>
                     </span>
-                  </span>
+                  )}
                 </div>
 
-                <div className="p-3 bg-slate-50 dark:bg-slate-700/50 rounded-xl border border-slate-100/80 dark:border-slate-600/50 sm:col-span-2">
-                  <span className="text-[9px] font-extrabold uppercase text-slate-400 block mb-0.5">Tanggal Lahir</span>
-                  <span className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
-                    <Calendar className="h-3.5 w-3.5 text-sky-500 shrink-0" />
-                    {currentStudent?.tanggal_lahir || '12 Oktober 2008'}
-                  </span>
+                {/* TANGGAL LAHIR - EDITABLE */}
+                <div className="sm:col-span-2">
+                  <label className="text-[9px] font-extrabold uppercase text-slate-400 block mb-0.5">Tanggal Lahir</label>
+                  {isProfileEditMode ? (
+                    <input
+                      type="date"
+                      value={profileFormData?.tanggal_lahir || ''}
+                      onChange={(e) => setProfileFormData({ ...profileFormData, tanggal_lahir: e.target.value })}
+                      className="w-full bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl px-3 py-2 text-xs text-slate-800 dark:text-slate-200 font-medium focus:outline-none focus:ring-2 focus:ring-sky-500"
+                    />
+                  ) : (
+                    <span className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                      <Calendar className="h-3.5 w-3.5 text-sky-500 shrink-0" />
+                      {currentStudent?.tanggal_lahir || '12 Oktober 2008'}
+                    </span>
+                  )}
                 </div>
               </div>
 
               <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100 dark:border-slate-700 pb-2 pt-2">Hubungan & Kontak</h4>
 
               <div className="grid grid-cols-1 gap-3">
-                <div className="p-3 bg-slate-50 dark:bg-slate-700/50 rounded-xl border border-slate-100/80 dark:border-slate-600/50 flex items-center justify-between gap-2">
-                  <div>
-                    <span className="text-[9px] font-extrabold uppercase text-slate-400 block mb-0.5">WhatsApp Siswa</span>
+                {/* WHATSAPP SISWA - EDITABLE */}
+                <div>
+                  <label className="text-[9px] font-extrabold uppercase text-slate-400 block mb-0.5">WhatsApp Siswa</label>
+                  {isProfileEditMode ? (
+                    <input
+                      type="tel"
+                      value={profileFormData?.no_whatsapp_siswa || ''}
+                      onChange={(e) => setProfileFormData({ ...profileFormData, no_whatsapp_siswa: e.target.value })}
+                      className="w-full bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl px-3 py-2 text-xs text-slate-800 dark:text-slate-200 font-medium focus:outline-none focus:ring-2 focus:ring-sky-500"
+                      placeholder="08123456789"
+                    />
+                  ) : (
                     <span className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
                       <Smartphone className="h-3.5 w-3.5 text-sky-500 shrink-0" />
                       {currentStudent?.no_whatsapp_siswa || '-'}
                     </span>
-                  </div>
+                  )}
                 </div>
 
-                <div className="p-3 bg-slate-50 dark:bg-slate-700/50 rounded-xl border border-slate-100/80 dark:border-slate-600/50 flex items-center justify-between gap-2">
-                  <div>
-                    <span className="text-[9px] font-extrabold uppercase text-slate-400 block mb-0.5">WhatsApp Orang Tua</span>
+                {/* WHATSAPP ORANG TUA - EDITABLE */}
+                <div>
+                  <label className="text-[9px] font-extrabold uppercase text-slate-400 block mb-0.5">WhatsApp Orang Tua</label>
+                  {isProfileEditMode ? (
+                    <input
+                      type="tel"
+                      value={profileFormData?.no_whatsapp_orang_tua || ''}
+                      onChange={(e) => setProfileFormData({ ...profileFormData, no_whatsapp_orang_tua: e.target.value })}
+                      className="w-full bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl px-3 py-2 text-xs text-slate-800 dark:text-slate-200 font-medium focus:outline-none focus:ring-2 focus:ring-sky-500"
+                      placeholder="08123456789"
+                    />
+                  ) : (
                     <span className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
                       <Smartphone className="h-3.5 w-3.5 text-sky-500 shrink-0" />
                       {currentStudent?.no_whatsapp_orang_tua || '-'}
                     </span>
-                  </div>
+                  )}
                 </div>
 
-                <div className="p-3 bg-slate-50 dark:bg-slate-700/50 rounded-xl border border-slate-100/80 dark:border-slate-600/50">
-                  <span className="text-[9px] font-extrabold uppercase text-slate-400 block mb-0.5">Email</span>
-                  <span className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5 break-all">
-                    <Mail className="h-3.5 w-3.5 text-sky-500 shrink-0" />
-                    {currentStudent?.email || '-'}
-                  </span>
+                {/* EMAIL - EDITABLE */}
+                <div>
+                  <label className="text-[9px] font-extrabold uppercase text-slate-400 block mb-0.5">Email</label>
+                  {isProfileEditMode ? (
+                    <input
+                      type="email"
+                      value={profileFormData?.email || ''}
+                      onChange={(e) => setProfileFormData({ ...profileFormData, email: e.target.value })}
+                      className="w-full bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl px-3 py-2 text-xs text-slate-800 dark:text-slate-200 font-medium focus:outline-none focus:ring-2 focus:ring-sky-500"
+                      placeholder="email@example.com"
+                    />
+                  ) : (
+                    <span className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5 break-all">
+                      <Mail className="h-3.5 w-3.5 text-sky-500 shrink-0" />
+                      {currentStudent?.email || '-'}
+                    </span>
+                  )}
                 </div>
               </div>
             </div>
 
             {/* Modal Footer */}
-            <div className="bg-slate-50 dark:bg-slate-800/80 p-4 border-t border-slate-100 dark:border-slate-700 flex justify-end">
-              <button 
-                id="btn-close-profile-modal-footer"
-                onClick={() => setShowProfileModal(false)}
-                className="bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 font-extrabold text-xs py-2.5 px-5 rounded-xl transition duration-150 cursor-pointer"
-              >
-                Tutup Profil
-              </button>
+            <div className="bg-slate-50 dark:bg-slate-800/80 p-4 border-t border-slate-100 dark:border-slate-700 flex justify-end gap-2">
+              {isProfileEditMode ? (
+                <>
+                  <button 
+                    onClick={handleCancelEditProfile}
+                    className="bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 font-extrabold text-xs py-2.5 px-5 rounded-xl transition duration-150 cursor-pointer"
+                  >
+                    Batal
+                  </button>
+                  <button 
+                    onClick={handleSaveProfile}
+                    disabled={isProfileSaving}
+                    className="bg-sky-600 hover:bg-sky-700 disabled:opacity-50 text-white font-extrabold text-xs py-2.5 px-5 rounded-xl transition duration-150 cursor-pointer flex items-center gap-1.5"
+                  >
+                    {isProfileSaving ? (
+                      <>
+                        <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                        Menyimpan...
+                      </>
+                    ) : (
+                      '💾 Simpan Perubahan'
+                    )}
+                  </button>
+                </>
+              ) : (
+                <button 
+                  onClick={() => setShowProfileModal(false)}
+                  className="bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 font-extrabold text-xs py-2.5 px-5 rounded-xl transition duration-150 cursor-pointer"
+                >
+                  Tutup Profil
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -3017,21 +3243,11 @@ export default function App() {
       {/* Global App Update Checker Modal */}
       <UpdateCheckerModal manualCheckTrigger={manualCheckTrigger} />
 
-      {/* Notification Center Modal */}
+      {/* Notification Center Modal - Displays riwayat_notifikasi_pengajar */}
       <NotificationModal
         isOpen={isNotificationModalOpen}
         onClose={() => setIsNotificationModalOpen(false)}
         student={selectedStudentData || currentStudent}
-        kbmSchedules={[...regularSchedules, ...additionalSchedules]}
-        bookingReservations={permintaanPelayanan}
-        learningProgress={learningProgress}
-        nilaiEvaluasi={nilaiEvaluasi}
-        outsideServices={outsideServices}
-        attendanceRecords={attendanceRecords}
-        grades={grades}
-        nilaiStandar={nilaiStandar}
-        nilaiSnbtUtbk={nilaiSnbtUtbk}
-        onNavigateView={(viewName) => setActiveTab(viewName as any)}
         onUnreadCountChange={setUnreadNotifCount}
       />
 

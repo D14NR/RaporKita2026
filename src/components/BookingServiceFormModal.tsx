@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { X, Calendar, BookOpen, Send, CheckCircle, CalendarDays, ChevronDown, Search, MessageSquare } from 'lucide-react';
 import { DataSiswa, Pengajar, PermintaanPelayanan } from '../types';
-import { supabase, supabaseKbm } from '../lib/supabase';
+import { d1, d1Kbm } from '../lib/d1';
 
 interface SearchableSelectOption {
   value: string;
@@ -42,12 +42,18 @@ const SearchableSelect: React.FC<SearchableSelectProps> = ({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const filteredOptions = options.filter(
-    (opt) =>
-      opt.label.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (opt.subLabel && opt.subLabel.toLowerCase().includes(searchTerm.toLowerCase())) ||
-      opt.value.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredOptions = options.filter((opt) => {
+    const label = String(opt.label ?? '').toLowerCase();
+    const sub = String(opt.subLabel ?? '').toLowerCase();
+    const val = String(opt.value ?? '').toLowerCase();
+    const needle = String(searchTerm ?? '').toLowerCase();
+
+    return (
+      (label && label.includes(needle)) ||
+      (sub && sub.includes(needle)) ||
+      (val && val.includes(needle))
+    );
+  });
 
   const selectedOption = options.find((opt) => opt.value === value);
 
@@ -183,33 +189,43 @@ export const BookingServiceFormModal: React.FC<BookingServiceFormModalProps> = (
   const fetchPengajarData = async () => {
     setIsLoadingPengajar(true);
     try {
-      let fetchedData: Pengajar[] | null = null;
-
-      const resMain = await supabase
+      // Fetch pengajar data from database
+      const res = await d1
         .from('pengajar')
-        .select('*')
-        .order('nama', { ascending: true });
+        .select('*');
 
-      if (!resMain.error && resMain.data && resMain.data.length > 0) {
-        fetchedData = resMain.data;
-      } else {
-        const resKbm = await supabaseKbm
-          .from('pengajar')
-          .select('*')
-          .order('nama', { ascending: true });
+      if (res.error) {
+        console.error('Error fetching pengajar data:', res.error);
+        throw res.error;
+      }
 
-        if (!resKbm.error && resKbm.data && resKbm.data.length > 0) {
-          fetchedData = resKbm.data;
-        }
+      let fetchedData = res.data as Pengajar[];
+      
+      console.log('Raw pengajar data from API:', fetchedData);
+
+      if (!Array.isArray(fetchedData)) {
+        console.warn('fetchedData is not an array:', fetchedData);
+        fetchedData = [];
       }
 
       if (fetchedData && fetchedData.length > 0) {
-        setPengajarList(fetchedData);
+        // Normalize data: ensure bidang_studi is set from either bidang_studi or bidang_studi_mata_pelajaran
+        const normalizedData = fetchedData.map((p) => ({
+          ...p,
+          bidang_studi: (p as any).bidang_studi || (p as any).bidang_studi_mata_pelajaran || '',
+          nama: (p as any).nama || (p as any).nama_pengajar || '',
+        }));
 
+        setPengajarList(normalizedData);
+        console.log('Normalized pengajar data:', normalizedData);
+
+        // Extract unique non-empty bidang_studi values
         const uniqueBidangSet = new Set<string>();
-        fetchedData.forEach((p) => {
-          if (p.bidang_studi) {
-            const items = p.bidang_studi.split(/[,;\n]+/);
+        normalizedData.forEach((p) => {
+          const bidang = p.bidang_studi?.trim();
+          if (bidang) {
+            // Split by comma, semicolon, or newline for multi-subject teachers
+            const items = bidang.split(/[,;\n]+/);
             items.forEach((item) => {
               const clean = item.trim();
               if (clean) {
@@ -218,15 +234,25 @@ export const BookingServiceFormModal: React.FC<BookingServiceFormModalProps> = (
             });
           }
         });
+
         const uniqueBidang = Array.from(uniqueBidangSet).sort((a, b) => a.localeCompare(b));
+        console.log('Extracted bidang studi options:', uniqueBidang);
 
         if (uniqueBidang.length > 0) {
           setBidangStudiOptions(uniqueBidang);
           setSubject((prev) => (uniqueBidang.includes(prev) ? prev : uniqueBidang[0]));
+          console.log('Bidang studi options set successfully');
+        } else {
+          console.warn('No bidang studi extracted, using fallback');
+          setBidangStudiOptions(DEFAULT_PENGAJAR_FALLBACK.map((p) => p.bidang_studi));
         }
 
-        setTeacher((prev) => prev || (fetchedData && fetchedData[0]?.nama) || '');
+        // Set default teacher if not already set
+        const firstTeacher = normalizedData[0]?.nama || '';
+        setTeacher((prev) => prev || firstTeacher);
       } else {
+        // Fallback default pengajar list if table is empty
+        console.warn('No pengajar data found, using fallback defaults');
         setPengajarList(DEFAULT_PENGAJAR_FALLBACK);
         const uniqueBidang = Array.from(
           new Set(DEFAULT_PENGAJAR_FALLBACK.map((p) => p.bidang_studi))
@@ -235,8 +261,12 @@ export const BookingServiceFormModal: React.FC<BookingServiceFormModalProps> = (
         setTeacher((prev) => prev || DEFAULT_PENGAJAR_FALLBACK[0].nama);
       }
     } catch (err) {
-      console.warn('Fallback fetching pengajar for booking:', err);
+      console.error('Error in fetchPengajarData, using fallback:', err);
       setPengajarList(DEFAULT_PENGAJAR_FALLBACK);
+      const uniqueBidang = Array.from(
+        new Set(DEFAULT_PENGAJAR_FALLBACK.map((p) => p.bidang_studi))
+      ).sort();
+      setBidangStudiOptions(uniqueBidang);
     } finally {
       setIsLoadingPengajar(false);
     }
@@ -289,27 +319,42 @@ export const BookingServiceFormModal: React.FC<BookingServiceFormModalProps> = (
     setIsSubmitting(true);
 
     const studentName = student?.nama || 'Siswa';
-    const basePayload = {
-      nis: student?.nis || 'S-DEFAULT',
-      cabang: student?.cabang || 'Pusat',
-      tanggal: date,
-      mata_pelajaran: subject,
-      pengajar: teacher,
-      keperluan: keperluan || 'Permintaan Reservasi Jadwal Layanan',
-      status: 'Menunggu',
-    };
+    const selectedTeacherRecord =
+      pengajarList.find((p) => String(p.kode_pengajar || p.nama) === String(teacher)) ||
+      filteredPengajarList.find((p) => String(p.kode_pengajar || p.nama) === String(teacher)) ||
+      pengajarList.find((p) => p.nama === teacher) ||
+      filteredPengajarList.find((p) => p.nama === teacher) ||
+      pengajarList[0] ||
+      DEFAULT_PENGAJAR_FALLBACK[0] ||
+      null;
 
-    const payloadNamaSiswa = { ...basePayload, nama_siswa: studentName };
-    const payloadBoth = { ...basePayload, nama_siswa: studentName, nama: studentName };
-    const payloadNama = { ...basePayload, nama: studentName };
+    const teacherCode = selectedTeacherRecord?.kode_pengajar?.trim() || null;
+    const teacherName = selectedTeacherRecord?.nama || teacher || 'Pengajar';
+    const safeSubject = (subject || 'Klinik Belajar Umum').trim() || 'Klinik Belajar Umum';
+    const safeKeperluan = (keperluan || 'Permintaan Reservasi Jadwal Layanan').trim() || 'Permintaan Reservasi Jadwal Layanan';
+
+    const nowIso = new Date().toISOString();
+    const exactPayload = {
+      id: `pp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      nis: student?.nis || 'S-DEFAULT',
+      nama_siswa: studentName,
+      cabang: student?.cabang || 'Pusat',
+      tanggal_pengajuan: date,
+      mata_pelajaran: safeSubject,
+      kode_pengajar: teacherCode,
+      nama_pengajar: teacherName,
+      keperluan: safeKeperluan,
+      status: 'Menunggu',
+      created_at: nowIso,
+      updated_at: nowIso,
+    };
 
     try {
       let dbData: any = null;
       let dbError: any = null;
       let usedKbmDb = false;
 
-      // 1. Primary insert into KBM database ('supabaseKbm' client) using exact schema (nama_siswa)
-      const tryInsert = async (client: typeof supabaseKbm, p: any) => {
+      const tryInsert = async (client: typeof d1Kbm, p: any) => {
         const { data, error } = await client.from('permintaan_pelayanan').insert([p]).select();
         if (!error && data && data.length > 0) return { data: data[0], error: null };
         const { error: plainErr } = await client.from('permintaan_pelayanan').insert([p]);
@@ -318,29 +363,24 @@ export const BookingServiceFormModal: React.FC<BookingServiceFormModalProps> = (
       };
 
       try {
-        let res = await tryInsert(supabaseKbm, payloadNamaSiswa);
-        if (res.error) res = await tryInsert(supabaseKbm, payloadBoth);
-        if (res.error) res = await tryInsert(supabaseKbm, payloadNama);
+        const res = await tryInsert(d1Kbm, exactPayload);
 
         if (!res.error) {
           dbData = res.data;
           usedKbmDb = true;
-          console.log('Successfully saved to KBM database (supabaseKbm):', dbData);
+          console.log('Successfully saved to KBM database (D1):', dbData);
         } else {
           dbError = res.error;
         }
       } catch (kbmErr: any) {
         dbError = kbmErr;
-        console.warn('Exception during KBM database insert:', kbmErr);
+        console.warn('Exception during D1 KBM insert:', kbmErr);
       }
 
-      // 2. Fallback to main database ('supabase' client) if KBM database insert failed
       if (!usedKbmDb) {
-        console.log('Trying fallback insert to main database (supabase)...');
+        console.log('Trying fallback insert to main D1 database...');
         try {
-          let resMain = await tryInsert(supabase, payloadNamaSiswa);
-          if (resMain.error) resMain = await tryInsert(supabase, payloadBoth);
-          if (resMain.error) resMain = await tryInsert(supabase, payloadNama);
+          const resMain = await tryInsert(d1, exactPayload);
 
           if (!resMain.error) {
             dbData = resMain.data;
@@ -360,10 +400,22 @@ export const BookingServiceFormModal: React.FC<BookingServiceFormModalProps> = (
         }
       }
 
-      const createdBooking: PermintaanPelayanan = dbData || {
-        id: `pp-${Date.now()}`,
-        ...payloadNamaSiswa,
-        created_at: new Date().toISOString(),
+      const createdBooking: PermintaanPelayanan = {
+        ...(dbData || exactPayload),
+        id: (dbData && dbData.id) || exactPayload.id,
+        nis: student?.nis || 'S-DEFAULT',
+        nama_siswa: studentName,
+        cabang: student?.cabang || 'Pusat',
+        tanggal: date,
+        tanggal_pengajuan: date,
+        mata_pelajaran: subject,
+        kode_pengajar: teacherCode || null,
+        pengajar: teacherName,
+        nama_pengajar: teacherName,
+        keperluan: keperluan || 'Permintaan Reservasi Jadwal Layanan',
+        status: 'Menunggu',
+        created_at: nowIso,
+        updated_at: nowIso,
       };
 
       setIsSuccess(true);

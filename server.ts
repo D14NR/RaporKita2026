@@ -1,11 +1,14 @@
 import express from "express";
 import path from "path";
+import dotenv from "dotenv";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI } from "@google/genai";
 
+dotenv.config();
+
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  const preferredPort = Number(process.env.PORT || 3000);
 
   app.use(express.json());
 
@@ -88,9 +91,31 @@ Gunakan bahasa Indonesia yang santun, memotivasi, jelas, dan berbasis data real 
     });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on http://localhost:${PORT}`);
+  const listenOnPort = (port: number) => new Promise<number>((resolve, reject) => {
+    const server = app.listen(port, "0.0.0.0", () => {
+      console.log(`Server running on http://localhost:${port}`);
+      resolve(port);
+    });
+
+    server.on("error", (error: any) => {
+      if (error && error.code === "EADDRINUSE") {
+        resolve(-1);
+        return;
+      }
+      reject(error);
+    });
   });
+
+  let port = preferredPort;
+  let nextPort = port;
+  while (nextPort >= port) {
+    const result = await listenOnPort(nextPort);
+    if (result === -1) {
+      nextPort += 1;
+      continue;
+    }
+    break;
+  }
 }
 
 startServer();

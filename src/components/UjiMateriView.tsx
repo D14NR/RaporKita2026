@@ -31,7 +31,8 @@ import {
   ThumbsDown
 } from 'lucide-react';
 import { DataSiswa } from '../types';
-import { supabaseUji, supabase } from '../lib/supabase';
+import { d1 } from '../lib/d1';
+import { supabaseUji } from '../lib/supabaseUji';
 import { formatTanggalIndo } from '../lib/dateUtils';
 
 export interface Question {
@@ -308,32 +309,26 @@ export const UjiMateriView: React.FC<UjiMateriViewProps> = ({ currentStudent }) 
     }
   };
 
-  // Load from Supabase `bank_soal` / `mata_pelajaran` and `butir_soal`
+  // Load quiz packages from Supabase bank_soal and butir_soal.
   const fetchUjiMateriFromSupabase = async () => {
     setIsLoadingDb(true);
     setDbError(null);
+
+    if (!supabaseUji) {
+      setDbError('Konfigurasi Supabase Uji Materi belum tersedia. Periksa VITE_SUPABASE_UJI dan VITE_SUPABASE_ANON_KEY_UJI, lalu build & deploy ulang aplikasi.');
+      setIsLoadingDb(false);
+      return;
+    }
+
     try {
-      // 1. Fetch bank_soal (or fallback to mata_pelajaran)
-      let mapelData: any[] = [];
+      // 1. Fetch quiz packages.
       const { data: bankData, error: bankErr } = await supabaseUji
         .from('bank_soal')
         .select('*')
         .order('created_at', { ascending: false });
 
-      if (!bankErr && bankData && bankData.length > 0) {
-        mapelData = bankData;
-      } else {
-        const { data: mpData, error: mpErr } = await supabaseUji
-          .from('mata_pelajaran')
-          .select('*')
-          .order('created_at', { ascending: false });
-
-        if (!mpErr && mpData) {
-          mapelData = mpData;
-        } else if (bankErr) {
-          throw bankErr;
-        }
-      }
+      if (bankErr) throw bankErr;
+      let mapelData = bankData || [];
 
       // Filter active items and match student's jenjang_studi
       mapelData = mapelData.filter((m: any) => {
@@ -369,10 +364,7 @@ export const UjiMateriView: React.FC<UjiMateriViewProps> = ({ currentStudent }) 
       // 3. Transform mapelData & soalData into QuizPackage[]
       const packages: QuizPackage[] = mapelData.map((m: any) => {
         const rawQuestions = (soalData || []).filter((s: any) => 
-          s.bank_soal_id === m.id || 
-          s.mata_pelajaran_id === m.id ||
-          (m.kode_soal_atau_sub_bab && s.kode_soal_atau_sub_bab === m.kode_soal_atau_sub_bab) ||
-          (m.mata_pelajaran && s.mata_pelajaran === m.mata_pelajaran)
+          s.bank_soal_id === m.id
         );
 
         const mappedQuestions: Question[] = rawQuestions.map((s: any, idx: number) => {
@@ -631,13 +623,6 @@ export const UjiMateriView: React.FC<UjiMateriViewProps> = ({ currentStudent }) 
       })
       .subscribe();
 
-    const channelMapel = supabaseUji
-      .channel('public:mata_pelajaran_uji')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'mata_pelajaran' }, () => {
-        fetchUjiMateriFromSupabase();
-      })
-      .subscribe();
-
     const channelSoal = supabaseUji
       .channel('public:butir_soal_uji')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'butir_soal' }, () => {
@@ -647,60 +632,47 @@ export const UjiMateriView: React.FC<UjiMateriViewProps> = ({ currentStudent }) 
 
     return () => {
       supabaseUji.removeChannel(channelBankSoal);
-      supabaseUji.removeChannel(channelMapel);
       supabaseUji.removeChannel(channelSoal);
     };
   }, []);
 
-  const fetchAttemptsFromSupabase = async () => {
+  const fetchAttemptsFromD1 = async () => {
     try {
       const nis = currentStudent?.nis || localStorage.getItem('active_nis');
       if (!nis) {
         setAttemptsHistory([]);
         return;
       }
-      const { data, error } = await supabaseUji
-        .from('riwayat_pengerjaan')
+      const { data, error } = await d1
+        .from('nilai_evaluasi')
         .select('*')
         .eq('nis', nis)
-        .order('created_at', { ascending: false });
+        .order('tanggal', { ascending: false });
 
       if (!error && data) {
         const mapped: QuizAttempt[] = data.map((row: any) => {
-          let userAnswersArray: any[] = [];
-          if (row.scor_Per_nomor) {
-            try {
-              const spm = typeof row.scor_Per_nomor === 'string'
-                ? JSON.parse(row.scor_Per_nomor)
-                : row.scor_Per_nomor;
-              
-              if (spm && typeof spm === 'object') {
-                const keys = Object.keys(spm).sort((a, b) => {
-                  const numA = parseInt(a.replace('soal_', ''), 10);
-                  const numB = parseInt(b.replace('soal_', ''), 10);
-                  return numA - numB;
-                });
-                userAnswersArray = keys.map(k => spm[k]?.jawaban_siswa);
-              }
-            } catch (e) {
-              console.warn('Error parsing scor_Per_nomor:', e);
-            }
-          }
+          const matchingPackage = dbPackages.find((pkg) => {
+            const rowSubBab = String(row.sub_bab_kode_soal || '').trim().toLowerCase();
+            const rowSubject = String(row.mata_pelajaran || '').trim().toLowerCase();
+            return rowSubBab === String(pkg.subBab).trim().toLowerCase()
+              && (!rowSubject || rowSubject === String(pkg.subject).trim().toLowerCase());
+          });
+          const totalQuestions = matchingPackage?.questions.length || 0;
 
           return {
             id: row.id,
-            packageId: row.bank_soal_id,
+            packageId: matchingPackage?.id || row.sub_bab_kode_soal || row.id,
             subject: row.mata_pelajaran || 'Umum',
-            title: row.kode_soal_atau_sub_bab || 'Uji Materi',
-            subBab: row.kode_soal_atau_sub_bab || '-',
-            date: row.created_at,
+            title: row.sub_bab_kode_soal || 'Uji Materi',
+            subBab: row.sub_bab_kode_soal || '-',
+            date: row.tanggal || row.created_at,
             score: Number(row.nilai) || 0,
-            correctCount: row.benar || 0,
-            answeredCount: (row.benar || 0) + (row.salah || 0),
-            totalQuestions: (row.benar || 0) + (row.salah || 0) + (row.kosong || 0),
+            correctCount: Number(row.nilai) >= 70 ? 1 : 0,
+            answeredCount: totalQuestions > 0 ? totalQuestions : 1,
+            totalQuestions: totalQuestions || 1,
             durationSeconds: 0,
-            userAnswers: userAnswersArray,
-            percobaan: row.percobaan
+            userAnswers: [],
+            percobaan: undefined
           };
         });
         setAttemptsHistory(mapped);
@@ -708,7 +680,7 @@ export const UjiMateriView: React.FC<UjiMateriViewProps> = ({ currentStudent }) 
         setAttemptsHistory([]);
       }
     } catch (err) {
-      console.error('Error fetching attempts from Supabase:', err);
+      console.error('Error fetching riwayat nilai dari D1:', err);
       setAttemptsHistory([]);
     }
   };
@@ -720,13 +692,13 @@ export const UjiMateriView: React.FC<UjiMateriViewProps> = ({ currentStudent }) 
         setSentSubBabs([]);
         return;
       }
-      const { data, error } = await supabase
+      const { data, error } = await d1
         .from('nilai_evaluasi')
-        .select('sub_bab')
+        .select('sub_bab_kode_soal')
         .eq('nis', nis);
 
       if (!error && data) {
-        const subBabs = data.map((row: any) => row.sub_bab).filter(Boolean);
+        const subBabs = data.map((row: any) => row.sub_bab_kode_soal).filter(Boolean);
         setSentSubBabs(subBabs);
       } else {
         setSentSubBabs([]);
@@ -737,13 +709,12 @@ export const UjiMateriView: React.FC<UjiMateriViewProps> = ({ currentStudent }) 
   };
 
   useEffect(() => {
-    fetchAttemptsFromSupabase();
+    fetchAttemptsFromD1();
     fetchSentEvaluations();
-  }, [nisKey]);
+  }, [nisKey, dbPackages]);
 
   const saveAttemptToHistory = (newAttempt: QuizAttempt) => {
-    // History is managed via Supabase riwayat_pengerjaan table
-    fetchAttemptsFromSupabase();
+    fetchAttemptsFromD1();
   };
 
   // Timer effect
@@ -801,7 +772,7 @@ export const UjiMateriView: React.FC<UjiMateriViewProps> = ({ currentStudent }) 
     setFlaggedQuestions(next);
   };
 
-  const finishQuiz = () => {
+  const finishQuiz = async () => {
     if (!activeQuizPackage) return;
 
     let totalPossiblePoints = 0;
@@ -842,85 +813,41 @@ export const UjiMateriView: React.FC<UjiMateriViewProps> = ({ currentStudent }) 
       : 0;
     const durationUsed = (activeQuizPackage.timeLimitMinutes * 60) - timeRemainingSeconds;
 
-    const kosong = Math.max(0, totalQ - answeredCount);
-    const salah = Math.max(0, totalQ - fullyCorrectCount - kosong);
+    const saveEvaluationToD1 = async () => {
+      const nis = currentStudent?.nis || localStorage.getItem('active_nis') || 'DEMO_NIS';
+      const nama = currentStudent?.nama || 'Siswa';
+      const tanggal = new Date().toISOString().split('T')[0];
+      const payload = {
+        id: `uji-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        siswa_id: currentStudent?.id || null,
+        nis,
+        nama_siswa: nama,
+        jenjang_studi: currentStudent?.jenjang_studi || activeQuizPackage.jenjang || null,
+        tanggal,
+        kode_pengajar: null,
+        nama_pengajar: activeQuizPackage.namaPengajar || null,
+        mata_pelajaran: activeQuizPackage.subject || null,
+        sub_bab_kode_soal: activeQuizPackage.subBab || activeQuizPackage.title || null,
+        nilai: score,
+        cabang: currentStudent?.cabang || null,
+      };
 
-    // Save to Supabase riwayat_pengerjaan table
-    const saveAttemptToSupabase = async () => {
-      try {
-        const nis = currentStudent?.nis || localStorage.getItem('active_nis') || 'DEMO_NIS';
-        const nama = currentStudent?.nama || 'Siswa';
-        const jenjang = activeQuizPackage.jenjang || currentStudent?.jenjang_studi || null;
-        const mataPelajaran = activeQuizPackage.subject || null;
-        const kodeSoal = activeQuizPackage.subBab || activeQuizPackage.title || null;
-        const pengajar = (activeQuizPackage as any).namaPengajar || null;
-
-        let percobaan = 1;
-        try {
-          const { count, error: countErr } = await supabaseUji
-            .from('riwayat_pengerjaan')
-            .select('*', { count: 'exact', head: true })
-            .eq('bank_soal_id', activeQuizPackage.id)
-            .eq('nis', nis);
-
-          if (!countErr && typeof count === 'number') {
-            percobaan = count + 1;
-          }
-        } catch (e) {
-          console.warn('Could not fetch existing attempts count:', e);
-        }
-
-        // Construct the scores per question details
-        const scorPerNomor: Record<string, any> = {};
-        activeQuizPackage.questions.forEach((q, idx) => {
-          const userAns = userAnswers[idx];
-          const { earned, max } = calculateQuestionScore(q, userAns);
-          scorPerNomor[`soal_${idx + 1}`] = {
-            skor: earned,
-            max: max,
-            tipe: q.tipe_soal,
-            jawaban_siswa: userAns
-          };
-        });
-
-        const payload = {
-          bank_soal_id: activeQuizPackage.id,
-          nis,
-          nama,
-          jenjang_studi: jenjang,
-          mata_pelajaran: mataPelajaran,
-          kode_soal_atau_sub_bab: kodeSoal,
-          benar: fullyCorrectCount,
-          salah,
-          kosong,
-          nilai: score,
-          percobaan,
-          pelanggaran: 0,
-          pengajar,
-          scor_Per_nomor: scorPerNomor
-        };
-
-        const { error: insertErr } = await supabaseUji
-          .from('riwayat_pengerjaan')
-          .insert([payload]);
-
-        if (insertErr) {
-          console.error('Failed to insert riwayat_pengerjaan to Supabase:', insertErr);
-        } else {
-          console.log('Successfully saved riwayat_pengerjaan to Supabase!');
-          fetchAttemptsFromSupabase();
-        }
-      } catch (err) {
-        console.error('Error saving riwayat_pengerjaan:', err);
+      const { error } = await d1.from('nilai_evaluasi').insert([payload]);
+      if (error) {
+        throw new Error(`Gagal menyimpan nilai ke database D1: ${error.message}`);
       }
     };
 
-    saveAttemptToSupabase();
+    try {
+      await saveEvaluationToD1();
+    } catch (error: any) {
+      console.error('Error menyimpan hasil Uji Materi:', error);
+      alert(error?.message || 'Hasil Uji Materi gagal disimpan.');
+      return;
+    }
 
     const now = new Date();
     const dateStr = formatTanggalIndo(now, { withDayName: true, withTime: true });
-
-    const currentAttemptNumber = attemptsHistory.filter(a => a.packageId === activeQuizPackage.id).length + 1;
 
     const newAttempt: QuizAttempt = {
       id: `att-${Date.now()}`,
@@ -935,7 +862,7 @@ export const UjiMateriView: React.FC<UjiMateriViewProps> = ({ currentStudent }) 
       totalQuestions: totalQ,
       durationSeconds: Math.max(durationUsed, 1),
       userAnswers: [...userAnswers],
-      percobaan: currentAttemptNumber
+      percobaan: 1
     };
 
     setIsQuizCompleted(true);
@@ -961,6 +888,15 @@ export const UjiMateriView: React.FC<UjiMateriViewProps> = ({ currentStudent }) 
     ? Math.round(attemptsHistory.reduce((acc, curr) => acc + curr.score, 0) / totalAttempts) 
     : 0;
   const passedCount = attemptsHistory.filter(a => a.score >= 70).length;
+
+  const normalizeAnalysisText = (value: unknown) => String(value || '').trim().toLowerCase();
+
+  const getPackageAttempts = (pkg: QuizPackage) => attemptsHistory.filter((attempt) => {
+    if (attempt.packageId === pkg.id) return true;
+
+    return normalizeAnalysisText(attempt.subBab) === normalizeAnalysisText(pkg.subBab)
+      && normalizeAnalysisText(attempt.subject) === normalizeAnalysisText(pkg.subject);
+  });
 
   const formatSeconds = (sec: number) => {
     const mins = Math.floor(sec / 60);
@@ -1656,18 +1592,21 @@ export const UjiMateriView: React.FC<UjiMateriViewProps> = ({ currentStudent }) 
                         const tanggal = new Date().toISOString().split('T')[0];
 
                         const payload = {
+                          id: `uji-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+                          siswa_id: currentStudent?.id || null,
                           nis,
-                          nama,
+                          nama_siswa: nama,
+                          jenjang_studi: currentStudent?.jenjang_studi || pkg.jenjang || null,
                           tanggal,
+                          kode_pengajar: null,
+                          nama_pengajar: pengajar,
                           mata_pelajaran: mataPelajaran,
-                          sub_bab: subBab,
+                          sub_bab_kode_soal: subBab,
                           nilai,
                           cabang,
-                          pengajar,
-                          siswa_id: currentStudent?.id || null
                         };
 
-                        const { error: insertErr } = await supabase
+                        const { error: insertErr } = await d1
                           .from('nilai_evaluasi')
                           .insert([payload]);
 
@@ -1676,7 +1615,7 @@ export const UjiMateriView: React.FC<UjiMateriViewProps> = ({ currentStudent }) 
                         } else {
                           alert('Nilai berhasil disimpan di database LPS!');
                           fetchSentEvaluations();
-                          fetchAttemptsFromSupabase();
+                          fetchAttemptsFromD1();
                           setCompletedAttempt(null);
                           setReviewingAttempt(null);
                           setActiveQuizPackage(null);
@@ -1686,7 +1625,7 @@ export const UjiMateriView: React.FC<UjiMateriViewProps> = ({ currentStudent }) 
                       }
                     };
 
-                    if (isReviewOnly) {
+                    if (isReviewOnly || currentAttemptNumber >= 1) {
                       return (
                         <div className="w-full flex justify-end">
                           <button
@@ -1729,7 +1668,7 @@ export const UjiMateriView: React.FC<UjiMateriViewProps> = ({ currentStudent }) 
                             className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition cursor-pointer text-center flex items-center justify-center gap-1.5"
                           >
                             <Sparkles className="h-4 w-4" />
-                            <span>Percobaan Ke 2</span>
+                            <span>Mulai Uji Materi</span>
                           </button>
                           <button
                             onClick={handleKirimNilaiAction}
@@ -1881,12 +1820,6 @@ export const UjiMateriView: React.FC<UjiMateriViewProps> = ({ currentStudent }) 
                         <Clock className="h-3.5 w-3.5 text-amber-500" />
                         <span>{pkg.timeLimitMinutes} Menit</span>
                       </div>
-                      {2 - packageAttemptsCount > 0 && (
-                        <div className="flex items-center gap-1 text-[11px]">
-                          <Sparkles className="h-3.5 w-3.5 text-indigo-500" />
-                          <span>Percobaan: {2 - packageAttemptsCount}</span>
-                        </div>
-                      )}
                     </div>
 
 
@@ -1897,9 +1830,9 @@ export const UjiMateriView: React.FC<UjiMateriViewProps> = ({ currentStudent }) 
                       <CheckCircle className="h-4 w-4 text-emerald-500" />
                       <span>Nilai Sudah Terkirim</span>
                     </div>
-                  ) : packageAttemptsCount >= 2 ? (
+                  ) : packageAttemptsCount >= 1 || isAlreadySent ? (
                     <div className="w-full py-2 sm:py-2.5 px-3.5 sm:px-4 bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 rounded-xl text-xs font-bold text-center border border-slate-200/50 dark:border-slate-700 mt-2 select-none">
-                      Batas Percobaan Habis (2/2)
+                      Sudah Dikerjakan
                     </div>
                   ) : (
                     <button
@@ -1907,7 +1840,7 @@ export const UjiMateriView: React.FC<UjiMateriViewProps> = ({ currentStudent }) 
                       className="w-full py-2 sm:py-2.5 px-3.5 sm:px-4 bg-sky-600 hover:bg-sky-700 text-white rounded-xl text-xs font-bold transition cursor-pointer shadow-xs flex items-center justify-center gap-2 group mt-2"
                     >
                       <Play className="h-3.5 w-3.5 fill-current group-hover:scale-110 transition-transform" />
-                      <span>{packageAttemptsCount === 1 ? 'Percobaan Ke 2' : 'Mulai Uji Materi'}</span>
+                      <span>Mulai Uji Materi</span>
                     </button>
                   )}
                 </div>
@@ -1948,11 +1881,6 @@ export const UjiMateriView: React.FC<UjiMateriViewProps> = ({ currentStudent }) 
                       <span className="bg-sky-100 dark:bg-sky-950/80 text-sky-800 dark:text-sky-300 text-[10px] font-black px-2 py-0.5 rounded-md">
                         {att.subject}
                       </span>
-                      {att.percobaan && (
-                        <span className="bg-amber-100 dark:bg-amber-950/80 text-amber-800 dark:text-amber-300 text-[10px] font-black px-2 py-0.5 rounded-md">
-                          Percobaan {att.percobaan}
-                        </span>
-                      )}
                       <span className="text-[11px] sm:text-xs text-slate-400 font-medium">{formatTanggalIndo(att.date, { withDayName: true, withTime: true })}</span>
                     </div>
                     <h4 className="text-xs sm:text-sm font-extrabold text-slate-800 dark:text-slate-100 break-words">{att.title}</h4>
@@ -1995,7 +1923,7 @@ export const UjiMateriView: React.FC<UjiMateriViewProps> = ({ currentStudent }) 
 
           <div className="space-y-2.5 sm:space-y-4">
             {allPackages.map((pkg) => {
-              const attempts = attemptsHistory.filter(a => a.packageId === pkg.id);
+              const attempts = getPackageAttempts(pkg);
               const pkgAvg = attempts.length > 0 
                 ? Math.round(attempts.reduce((a, b) => a + b.score, 0) / attempts.length) 
                 : 0;
