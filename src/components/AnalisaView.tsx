@@ -543,7 +543,7 @@ export const AnalisaView: React.FC<AnalisaViewProps> = ({
                             <div className="space-y-1">
                               {data.recentGrades.map((g, gIdx) => (
                                 <div key={gIdx} className="flex justify-between items-center bg-slate-50 dark:bg-slate-800/40 px-2.5 py-1.5 rounded-lg text-[11px]">
-                                  <span className="text-slate-600 dark:text-slate-300 font-medium">{g.sub_bab || 'Evaluasi'}</span>
+                                  <span className="text-slate-600 dark:text-slate-300 font-medium">{g.sub_bab_kode_soal || 'Evaluasi'}</span>
                                   <span className="font-black text-indigo-600 dark:text-indigo-400">{g.nilai}</span>
                                 </div>
                               ))}

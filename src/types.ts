@@ -87,13 +87,19 @@ export interface Grade {
 
 export interface NilaiEvaluasi {
   id: string;
-  nis: string;
-  nama: string;
+  siswa_id?: string | null;
+  nis?: string | null;
+  nama_siswa?: string | null;
+  nama?: string;
+  jenjang_studi?: string | null;
   tanggal: string;
-  mata_pelajaran: string;
-  sub_bab: string;
-  nilai: number;
-  cabang?: string;
+  kode_pengajar?: string | null;
+  nama_pengajar?: string | null;
+  mata_pelajaran?: string | null;
+  sub_bab_kode_soal?: string | null;
+  sub_bab?: string;
+  nilai?: number | null;
+  cabang?: string | null;
   created_at?: string;
   updated_at?: string;
   siswa_id?: string;

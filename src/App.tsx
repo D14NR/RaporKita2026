@@ -696,7 +696,7 @@ export default function App() {
         ] = await Promise.all([
           loadByStudentIdentity('perkembangan_belajar'),
           d1.from('riwayat_pelayanan_siswa').select('*').in('nis', nisCandidates).order('tanggal', { ascending: false }),
-          d1.from('nilai_evaluasi').select('*').in('nis', nisCandidates).order('tanggal', { ascending: false }),
+          loadByStudentIdentity('nilai_evaluasi'),
           d1.from('nilai_standar').select('*').in('nis', nisCandidates).order('tanggal', { ascending: false }),
           d1.from('nilai_snbt').select('*').in('nis', nisCandidates).order('tanggal', { ascending: false }),
           (async () => {
@@ -729,8 +729,15 @@ export default function App() {
           localStorage.setItem(`rapor_srv_${selectedStudentId}`, JSON.stringify(srvRes.data));
         }
         if (evalRes.data) {
-          setNilaiEvaluasi(evalRes.data);
-          localStorage.setItem(`rapor_eval_${selectedStudentId}`, JSON.stringify(evalRes.data));
+          const evaluationRows = evalRes.data.filter((row: any) => {
+            const rowNis = String(row?.nis ?? '').trim();
+            const rowStudentId = String(row?.siswa_id ?? '').trim();
+            return nisCandidates.includes(rowNis) || (
+              rowStudentId.length > 0 && siswaIdCandidates.includes(rowStudentId)
+            );
+          });
+          setNilaiEvaluasi(evaluationRows);
+          localStorage.setItem(`rapor_eval_${selectedStudentId}`, JSON.stringify(evaluationRows));
         }
         if (stdRes.data) {
           setNilaiStandar(stdRes.data);
@@ -1832,7 +1839,7 @@ export default function App() {
                       {nilaiEvaluasi.slice(0, 3).map((item, idx) => (
                         <div key={idx} className="space-y-1">
                           <div className="flex justify-between items-center text-xs">
-                            <span className="font-bold text-slate-700 dark:text-slate-300">{item.mata_pelajaran} <span className="font-normal text-slate-400">({item.sub_bab})</span></span>
+                            <span className="font-bold text-slate-700 dark:text-slate-300">{item.mata_pelajaran} <span className="font-normal text-slate-400">({item.sub_bab_kode_soal || 'Evaluasi'})</span></span>
                             <span className="font-black text-slate-900 dark:text-slate-100">{item.nilai}</span>
                           </div>
                           <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
@@ -2393,7 +2400,7 @@ export default function App() {
                         <div className="space-y-1">
                           <span className="text-[10px] bg-slate-200/60 text-slate-500 dark:text-slate-400 font-bold px-2 py-0.5 rounded-md">{formatTanggalIndo(item.tanggal)}</span>
                           <h4 className="text-sm font-black text-slate-800 dark:text-slate-200 mt-1">{item.mata_pelajaran}</h4>
-                          <p className="text-xs text-slate-500">Materi: <strong className="font-semibold text-slate-700 dark:text-slate-300">{item.sub_bab}</strong></p>
+                          <p className="text-xs text-slate-500">Materi: <strong className="font-semibold text-slate-700 dark:text-slate-300">{item.sub_bab_kode_soal || 'Evaluasi'}</strong></p>
                         </div>
                         <div className="text-right">
                           <span className={`text-lg font-black px-3 py-1.5 rounded-xl block ${

@@ -1,6 +1,6 @@
 // Service Worker untuk Web Push Notifications
 
-const CACHE_NAME = 'raporkita-cache-v2';
+const CACHE_NAME = 'raporkita-cache';
 
 // Install event - cache resources
 self.addEventListener('install', (event) => {
@@ -11,7 +11,13 @@ self.addEventListener('install', (event) => {
 // Activate event
 self.addEventListener('activate', (event) => {
   console.log('Service Worker activating...');
-  event.waitUntil(clients.claim());
+  event.waitUntil(
+    caches.keys().then((cacheNames) => Promise.all(
+      cacheNames
+        .filter((cacheName) => cacheName !== CACHE_NAME)
+        .map((cacheName) => caches.delete(cacheName))
+    )).then(() => clients.claim())
+  );
 });
 
 // Push event - handle incoming push notifications
@@ -102,32 +108,17 @@ self.addEventListener('fetch', (event) => {
   }
 
   event.respondWith(
-    caches.open(CACHE_NAME).then((cache) => cache.match(event.request)).then((response) => {
-      if (response) {
-        return response;
-      }
-
-      return fetch(event.request)
-        .then((response) => {
-          // Don't cache non-successful responses
-          if (!response || response.status !== 200 || response.type !== 'basic') {
-            return response;
-          }
-
-          // Clone the response
+    fetch(event.request)
+      .then((response) => {
+        if (response && response.status === 200 && response.type === 'basic') {
           const responseToCache = response.clone();
-
-          caches.open(CACHE_NAME).then((cache) => {
-            cache.put(event.request, responseToCache);
-          });
-
-          return response;
-        })
-        .catch(() => {
-          // Return offline page or cached response
-          return new Response('Offline - cached version not available');
-        });
-    })
+          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, responseToCache));
+        }
+        return response;
+      })
+      .catch(() => caches.open(CACHE_NAME).then((cache) => cache.match(event.request)).then((response) => (
+        response || new Response('Offline - cached version not available')
+      )))
   );
 });
 

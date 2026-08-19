@@ -171,7 +171,35 @@ export default {
 
       try {
         if (request.method === 'GET') {
-          const res = await env.DB.prepare(`SELECT * FROM "${table}"`).all();
+          const whereParts = [];
+          const bindings = [];
+          const addFilter = (column, operator, value) => {
+            if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(column) || value == null || value === '') return;
+            whereParts.push(`"${column}" ${operator} ?`);
+            bindings.push(value);
+          };
+
+          for (const [key, value] of url.searchParams.entries()) {
+            if (key.startsWith('eq_')) addFilter(key.slice(3), '=', value);
+            if (key.startsWith('ilike_')) addFilter(key.slice(6), 'LIKE', `%${value}%`);
+            if (key.startsWith('in_')) {
+              const values = value.split(',').filter(Boolean);
+              if (/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(key.slice(3)) && values.length > 0) {
+                const placeholders = values.map(() => '?').join(', ');
+                whereParts.push(`"${key.slice(3)}" IN (${placeholders})`);
+                bindings.push(...values);
+              }
+            }
+          }
+
+          const orderColumn = url.searchParams.get('order');
+          const orderSql = orderColumn && /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(orderColumn)
+            ? ` ORDER BY "${orderColumn}" ${url.searchParams.get('ascending') === 'false' ? 'DESC' : 'ASC'}`
+            : '';
+          const limitValue = Number(url.searchParams.get('limit'));
+          const limitSql = Number.isInteger(limitValue) && limitValue > 0 ? ` LIMIT ${Math.min(limitValue, 500)}` : '';
+          const whereSql = whereParts.length > 0 ? ` WHERE ${whereParts.join(' AND ')}` : '';
+          const res = await env.DB.prepare(`SELECT * FROM "${table}"${whereSql}${orderSql}${limitSql}`).bind(...bindings).all();
           return jsonResponse(res.results || [], 200);
         }
 

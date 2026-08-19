@@ -154,6 +154,7 @@ export interface QuizPackage {
   timeLimitMinutes: number;
   difficulty: 'Mudah' | 'Sedang' | 'Sulit';
   questions: Question[];
+  kodePengajar?: string | null;
   namaPengajar?: string | null;
   isFromSupabase?: boolean;
 }
@@ -173,6 +174,21 @@ export interface QuizAttempt {
   userAnswers: any[];
   percobaan?: number;
 }
+
+type NilaiEvaluasiInsert = {
+  id: string;
+  siswa_id: string | null;
+  nis: string | null;
+  nama_siswa: string | null;
+  jenjang_studi: string | null;
+  tanggal: string;
+  kode_pengajar: string | null;
+  nama_pengajar: string | null;
+  mata_pelajaran: string | null;
+  sub_bab_kode_soal: string | null;
+  nilai: number;
+  cabang: string;
+};
 
 interface UjiMateriViewProps {
   currentStudent: DataSiswa | null;
@@ -237,6 +253,59 @@ export const UjiMateriView: React.FC<UjiMateriViewProps> = ({ currentStudent }) 
   const [sentSubBabs, setSentSubBabs] = useState<string[]>([]);
 
   const nisKey = currentStudent?.nis || 'default';
+
+  const resolveStudentBranch = async () => {
+    const currentBranch = String(currentStudent?.cabang || '').trim();
+    if (currentBranch) return currentBranch;
+
+    const nis = currentStudent?.nis || localStorage.getItem('active_nis');
+    if (!nis) {
+      throw new Error('NIS siswa tidak ditemukan untuk menentukan cabang.');
+    }
+
+    const { data, error } = await d1
+      .from('data_siswa')
+      .select('cabang')
+      .eq('nis', nis)
+      .maybeSingle();
+
+    if (error) throw error;
+
+    const branch = String(data?.cabang || '').trim();
+    if (!branch) {
+      throw new Error('Cabang siswa belum terisi di data_siswa. Nilai tidak disimpan sebelum cabang tersedia.');
+    }
+
+    return branch;
+  };
+
+  const buildNilaiEvaluasiRecord = async ({
+    packageData,
+    score,
+    id,
+  }: {
+    packageData: QuizPackage;
+    score: number;
+    id: string;
+  }): Promise<NilaiEvaluasiInsert> => {
+    const nis = currentStudent?.nis || localStorage.getItem('active_nis');
+    const cabang = await resolveStudentBranch();
+
+    return {
+      id,
+      siswa_id: currentStudent?.id || null,
+      nis: nis || null,
+      nama_siswa: currentStudent?.nama || null,
+      jenjang_studi: currentStudent?.jenjang_studi || packageData.jenjang || null,
+      tanggal: new Date().toISOString().split('T')[0],
+      kode_pengajar: packageData.kodePengajar || null,
+      nama_pengajar: packageData.namaPengajar || null,
+      mata_pelajaran: packageData.subject || null,
+      sub_bab_kode_soal: packageData.subBab || packageData.title || null,
+      nilai: Math.max(0, Math.min(100, Number(score) || 0)),
+      cabang,
+    };
+  };
 
   // Helper to parse question type
   const normalizeTipeSoal = (tipe?: any): 'pilihan_ganda' | 'pilihan_kompleks' | 'pilihan_benar_salah' | 'pilihan_setuju_tidak' | 'esai' => {
@@ -598,6 +667,7 @@ export const UjiMateriView: React.FC<UjiMateriViewProps> = ({ currentStudent }) 
           timeLimitMinutes: m.durasi && m.durasi > 0 ? m.durasi : 15,
           difficulty: 'Sedang',
           questions: mappedQuestions,
+          kodePengajar: m.kode_pengajar || null,
           namaPengajar: m.nama_pengajar,
           isFromSupabase: true
         };
@@ -636,20 +706,52 @@ export const UjiMateriView: React.FC<UjiMateriViewProps> = ({ currentStudent }) 
     };
   }, []);
 
-  const fetchAttemptsFromD1 = async () => {
-    try {
-      const nis = currentStudent?.nis || localStorage.getItem('active_nis');
-      if (!nis) {
-        setAttemptsHistory([]);
-        return;
-      }
-      const { data, error } = await d1
+  const fetchStudentEvaluationRows = async () => {
+    const nis = currentStudent?.nis || localStorage.getItem('active_nis');
+    const studentId = currentStudent?.id;
+    const columns = 'id,siswa_id,nis,nama_siswa,jenjang_studi,tanggal,kode_pengajar,nama_pengajar,mata_pelajaran,sub_bab_kode_soal,nilai,cabang,created_at,updated_at';
+
+    if (!nis && !studentId) return [];
+
+    const { data: nisRows, error: nisError } = nis
+      ? await d1
         .from('nilai_evaluasi')
-        .select('*')
+        .select(columns)
         .eq('nis', nis)
+        .order('tanggal', { ascending: false })
+      : { data: [], error: null };
+
+    if (nisError) throw nisError;
+
+    const rowsById = new Map<string, any>();
+    for (const row of nisRows || []) {
+      rowsById.set(String(row.id), row);
+    }
+
+    if (studentId) {
+      const { data: studentRows, error: studentError } = await d1
+        .from('nilai_evaluasi')
+        .select(columns)
+        .eq('siswa_id', studentId)
         .order('tanggal', { ascending: false });
 
-      if (!error && data) {
+      if (studentError) throw studentError;
+      for (const row of studentRows || []) {
+        rowsById.set(String(row.id), row);
+      }
+    }
+
+    return Array.from(rowsById.values()).sort((left, right) =>
+      String(right.tanggal || right.created_at || '').localeCompare(
+        String(left.tanggal || left.created_at || '')
+      )
+    );
+  };
+
+  const fetchAttemptsFromD1 = async () => {
+    try {
+      const data = await fetchStudentEvaluationRows();
+      if (data.length > 0) {
         const mapped: QuizAttempt[] = data.map((row: any) => {
           const matchingPackage = dbPackages.find((pkg) => {
             const rowSubBab = String(row.sub_bab_kode_soal || '').trim().toLowerCase();
@@ -676,9 +778,7 @@ export const UjiMateriView: React.FC<UjiMateriViewProps> = ({ currentStudent }) 
           };
         });
         setAttemptsHistory(mapped);
-      } else {
-        setAttemptsHistory([]);
-      }
+      } else setAttemptsHistory([]);
     } catch (err) {
       console.error('Error fetching riwayat nilai dari D1:', err);
       setAttemptsHistory([]);
@@ -687,24 +787,14 @@ export const UjiMateriView: React.FC<UjiMateriViewProps> = ({ currentStudent }) 
 
   const fetchSentEvaluations = async () => {
     try {
-      const nis = currentStudent?.nis || localStorage.getItem('active_nis');
-      if (!nis) {
-        setSentSubBabs([]);
-        return;
-      }
-      const { data, error } = await d1
-        .from('nilai_evaluasi')
-        .select('sub_bab_kode_soal')
-        .eq('nis', nis);
-
-      if (!error && data) {
-        const subBabs = data.map((row: any) => row.sub_bab_kode_soal).filter(Boolean);
-        setSentSubBabs(subBabs);
-      } else {
-        setSentSubBabs([]);
-      }
+      const data = await fetchStudentEvaluationRows();
+      const subBabs = data
+        .map((row: any) => row.sub_bab_kode_soal)
+        .filter(Boolean);
+      setSentSubBabs(subBabs);
     } catch (err) {
       console.error('Error fetching sent evaluations:', err);
+      setSentSubBabs([]);
     }
   };
 
@@ -739,14 +829,54 @@ export const UjiMateriView: React.FC<UjiMateriViewProps> = ({ currentStudent }) 
     setMaxWarning(null);
   }, [currentQuestionIdx]);
 
-  const startQuiz = (pkg: QuizPackage) => {
-    const isAlreadySent = sentSubBabs.some(s => 
-      s === pkg.subBab || 
-      s === pkg.title || 
-      s.toLowerCase().trim() === (pkg.subBab || '').toLowerCase().trim() ||
-      s.toLowerCase().trim() === (pkg.title || '').toLowerCase().trim()
-    );
-    if (isAlreadySent) {
+  const startQuiz = async (pkg: QuizPackage) => {
+    const nis = currentStudent?.nis || localStorage.getItem('active_nis');
+    const studentId = currentStudent?.id;
+
+    if (!nis) {
+      alert('Identitas siswa tidak ditemukan. Silakan masuk kembali.');
+      return;
+    }
+
+    try {
+      const { data: nisRows, error: nisError } = await d1
+        .from('nilai_evaluasi')
+        .select('nis, siswa_id, sub_bab_kode_soal')
+        .eq('nis', nis);
+
+      if (nisError) throw nisError;
+
+      let evaluationRows = nisRows || [];
+      if (evaluationRows.length === 0 && studentId) {
+        const { data: studentRows, error: studentError } = await d1
+          .from('nilai_evaluasi')
+          .select('nis, siswa_id, sub_bab_kode_soal')
+          .eq('siswa_id', studentId);
+
+        if (studentError) throw studentError;
+        evaluationRows = studentRows || [];
+      }
+
+      const packageSubBab = normalizeAnalysisText(pkg.subBab);
+      const packageTitle = normalizeAnalysisText(pkg.title);
+      const hasSavedEvaluation = evaluationRows.some((row: any) => {
+        const submittedSubBab = normalizeAnalysisText(row.sub_bab_kode_soal);
+        return submittedSubBab.length > 0 && (
+          submittedSubBab === packageSubBab || submittedSubBab === packageTitle
+        );
+      });
+
+      if (hasSavedEvaluation || isPackageCompleted(pkg)) {
+        alert('Anda sudah mengerjakan sub-bab ini dan tidak diperbolehkan mengerjakannya kembali.');
+        return;
+      }
+    } catch (error: any) {
+      console.error('Gagal memeriksa riwayat pengerjaan:', error);
+      alert(`Riwayat pengerjaan belum dapat diverifikasi: ${error?.message || String(error)}`);
+      return;
+    }
+
+    if (isPackageCompleted(pkg)) {
       alert('Anda sudah mengirimkan nilai untuk Uji Materi ini dan tidak diperbolehkan mengerjakannya kembali.');
       return;
     }
@@ -814,23 +944,11 @@ export const UjiMateriView: React.FC<UjiMateriViewProps> = ({ currentStudent }) 
     const durationUsed = (activeQuizPackage.timeLimitMinutes * 60) - timeRemainingSeconds;
 
     const saveEvaluationToD1 = async () => {
-      const nis = currentStudent?.nis || localStorage.getItem('active_nis') || 'DEMO_NIS';
-      const nama = currentStudent?.nama || 'Siswa';
-      const tanggal = new Date().toISOString().split('T')[0];
-      const payload = {
+      const payload = await buildNilaiEvaluasiRecord({
+        packageData: activeQuizPackage,
+        score,
         id: `uji-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-        siswa_id: currentStudent?.id || null,
-        nis,
-        nama_siswa: nama,
-        jenjang_studi: currentStudent?.jenjang_studi || activeQuizPackage.jenjang || null,
-        tanggal,
-        kode_pengajar: null,
-        nama_pengajar: activeQuizPackage.namaPengajar || null,
-        mata_pelajaran: activeQuizPackage.subject || null,
-        sub_bab_kode_soal: activeQuizPackage.subBab || activeQuizPackage.title || null,
-        nilai: score,
-        cabang: currentStudent?.cabang || null,
-      };
+      });
 
       const { error } = await d1.from('nilai_evaluasi').insert([payload]);
       if (error) {
@@ -897,6 +1015,18 @@ export const UjiMateriView: React.FC<UjiMateriViewProps> = ({ currentStudent }) 
     return normalizeAnalysisText(attempt.subBab) === normalizeAnalysisText(pkg.subBab)
       && normalizeAnalysisText(attempt.subject) === normalizeAnalysisText(pkg.subject);
   });
+
+  const isPackageCompleted = (pkg: QuizPackage) => {
+    const packageSubBab = normalizeAnalysisText(pkg.subBab);
+    const packageTitle = normalizeAnalysisText(pkg.title);
+
+    return getPackageAttempts(pkg).length > 0 || sentSubBabs.some((value) => {
+      const submittedSubBab = normalizeAnalysisText(value);
+      return submittedSubBab.length > 0 && (
+        submittedSubBab === packageSubBab || submittedSubBab === packageTitle
+      );
+    });
+  };
 
   const formatSeconds = (sec: number) => {
     const mins = Math.floor(sec / 60);
@@ -1582,29 +1712,11 @@ export const UjiMateriView: React.FC<UjiMateriViewProps> = ({ currentStudent }) 
                     const handleKirimNilaiAction = async () => {
                       if (!pkg || !attempt) return;
                       try {
-                        const nis = currentStudent?.nis || localStorage.getItem('active_nis') || 'DEMO_NIS';
-                        const nama = currentStudent?.nama || 'Siswa';
-                        const mataPelajaran = pkg.subject || null;
-                        const subBab = pkg.subBab || pkg.title || null;
-                        const nilai = attempt.score;
-                        const cabang = currentStudent?.cabang || null;
-                        const pengajar = (pkg as any).namaPengajar || pkg.namaPengajar || null;
-                        const tanggal = new Date().toISOString().split('T')[0];
-
-                        const payload = {
+                        const payload = await buildNilaiEvaluasiRecord({
+                          packageData: pkg,
+                          score: attempt.score,
                           id: `uji-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-                          siswa_id: currentStudent?.id || null,
-                          nis,
-                          nama_siswa: nama,
-                          jenjang_studi: currentStudent?.jenjang_studi || pkg.jenjang || null,
-                          tanggal,
-                          kode_pengajar: null,
-                          nama_pengajar: pengajar,
-                          mata_pelajaran: mataPelajaran,
-                          sub_bab_kode_soal: subBab,
-                          nilai,
-                          cabang,
-                        };
+                        });
 
                         const { error: insertErr } = await d1
                           .from('nilai_evaluasi')
@@ -1765,14 +1877,8 @@ export const UjiMateriView: React.FC<UjiMateriViewProps> = ({ currentStudent }) 
           {/* Quiz Package Cards Grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
             {filteredPackages.map((pkg) => {
-              const prevAttempt = attemptsHistory.find(a => a.packageId === pkg.id);
-              const packageAttemptsCount = attemptsHistory.filter(a => a.packageId === pkg.id).length;
-              const isAlreadySent = sentSubBabs.some(s => 
-                s === pkg.subBab || 
-                s === pkg.title || 
-                s.toLowerCase().trim() === (pkg.subBab || '').toLowerCase().trim() ||
-                s.toLowerCase().trim() === (pkg.title || '').toLowerCase().trim()
-              );
+              const packageAttemptsCount = getPackageAttempts(pkg).length;
+              const isAlreadySent = isPackageCompleted(pkg);
 
               return (
                 <div 
@@ -1899,12 +2005,6 @@ export const UjiMateriView: React.FC<UjiMateriViewProps> = ({ currentStudent }) 
                       </div>
                     </div>
 
-                    <button
-                      onClick={() => setReviewingAttempt(att)}
-                      className="px-3 py-1.5 sm:px-3.5 sm:py-2 bg-white dark:bg-slate-700 hover:bg-slate-100 dark:hover:bg-slate-600 border border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-200 text-xs font-bold rounded-xl transition cursor-pointer shadow-2xs shrink-0"
-                    >
-                      Lihat Pembahasan
-                    </button>
                   </div>
                 </div>
               ))}

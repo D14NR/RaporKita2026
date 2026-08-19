@@ -315,7 +315,27 @@ class D1Query {
     };
 
     try {
-      const url = `${this.apiUrl}/db/${tableName}`;
+      const params = new URLSearchParams();
+      for (const filter of this.filters) {
+        if (filter.op === 'eq') {
+          params.set(`eq_${filter.column}`, String(filter.value ?? ''));
+        } else if (filter.op === 'ilike') {
+          params.set(`ilike_${filter.column}`, String(filter.value ?? '').replace(/%/g, ''));
+        } else if (filter.op === 'in') {
+          const values = Array.isArray(filter.value) ? filter.value : [filter.value];
+          params.set(`in_${filter.column}`, values.map((value) => String(value ?? '')).join(','));
+        }
+      }
+      if (this.orders.length > 0) {
+        params.set('order', this.orders[0].column);
+        params.set('ascending', String(this.orders[0].ascending));
+      }
+      if (this.limitValue && Number.isFinite(this.limitValue)) {
+        params.set('limit', String(this.limitValue));
+      }
+
+      const queryString = params.toString();
+      const url = `${this.apiUrl}/db/${tableName}${queryString ? `?${queryString}` : ''}`;
       const payload = await readJson(url, { method: 'GET', headers: { Accept: 'application/json' } });
       const responsePayload = payload && typeof payload === 'object' && 'success' in payload && payload.success
         ? (Array.isArray((payload as any).data) ? (payload as any).data : [])
@@ -355,7 +375,23 @@ class D1Query {
       if (this.op === 'update') {
         const updateRecord = this.updatePayload || {};
         const targetId = typeof updateRecord.id === 'string' ? updateRecord.id : null;
-        const sourceRows = await readJson(`${this.apiUrl}/db/${tableName}`, { method: 'GET', headers: { Accept: 'application/json' } });
+        const lookupParams = new URLSearchParams();
+        if (targetId) {
+          lookupParams.set('eq_id', targetId);
+        } else {
+          for (const filter of this.filters) {
+            if (filter.op === 'eq') {
+              lookupParams.set(`eq_${filter.column}`, String(filter.value ?? ''));
+            } else if (filter.op === 'ilike') {
+              lookupParams.set(`ilike_${filter.column}`, String(filter.value ?? '').replace(/%/g, ''));
+            } else if (filter.op === 'in') {
+              const values = Array.isArray(filter.value) ? filter.value : [filter.value];
+              lookupParams.set(`in_${filter.column}`, values.map((value) => String(value ?? '')).join(','));
+            }
+          }
+        }
+        lookupParams.set('limit', '1');
+        const sourceRows = await readJson(`${this.apiUrl}/db/${tableName}?${lookupParams.toString()}`, { method: 'GET', headers: { Accept: 'application/json' } });
         const rows = Array.isArray(sourceRows) ? sourceRows : sourceRows && Array.isArray(sourceRows.data) ? sourceRows.data : [];
         const candidate = findMatchingRowForUpdate(rows, this.filters, targetId);
 
