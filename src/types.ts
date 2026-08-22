@@ -102,7 +102,6 @@ export interface NilaiEvaluasi {
   cabang?: string | null;
   created_at?: string;
   updated_at?: string;
-  siswa_id?: string;
 }
 
 export interface NilaiSnbtUtbk {

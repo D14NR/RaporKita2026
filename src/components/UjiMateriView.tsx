@@ -685,6 +685,8 @@ export const UjiMateriView: React.FC<UjiMateriViewProps> = ({ currentStudent }) 
   useEffect(() => {
     fetchUjiMateriFromSupabase();
 
+    if (!supabaseUji) return;
+
     // Supabase realtime listeners
     const channelBankSoal = supabaseUji
       .channel('public:bank_soal_uji')
@@ -701,8 +703,10 @@ export const UjiMateriView: React.FC<UjiMateriViewProps> = ({ currentStudent }) 
       .subscribe();
 
     return () => {
-      supabaseUji.removeChannel(channelBankSoal);
-      supabaseUji.removeChannel(channelSoal);
+      if (supabaseUji) {
+        supabaseUji.removeChannel(channelBankSoal);
+        supabaseUji.removeChannel(channelSoal);
+      }
     };
   }, []);
 

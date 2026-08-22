@@ -282,7 +282,7 @@ export default function App() {
           .map((row: any) => (row.mata_pelajaran || row.nama_mata_pelajaran || row.mapel || row.subject || '').trim())
           .filter(Boolean);
 
-        const uniqueOptions = [...new Set(options)];
+        const uniqueOptions: string[] = [...new Set(options)] as string[];
         setMataPelajaranOptions(uniqueOptions);
       } catch (err) {
         console.error('Error loading mata_pelajaran options:', err);
