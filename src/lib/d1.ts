@@ -768,13 +768,18 @@ CREATE TABLE IF NOT EXISTS nilai_snbt (
     FOREIGN KEY (siswa_id) REFERENCES data_siswa (id) ON UPDATE CASCADE ON DELETE CASCADE
 );
 
-CREATE TABLE IF NOT EXISTS onesignal_subscriptions (
+CREATE TABLE IF NOT EXISTS push_subscriptions_siswa (
     id TEXT PRIMARY KEY NOT NULL,
-    subscription_id TEXT NOT NULL,
+
     nis TEXT NOT NULL,
-    platform TEXT DEFAULT 'web',
-    user_agent TEXT,
-    created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-    updated_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+    nama_siswa TEXT NOT NULL,
+
+    endpoint TEXT NOT NULL UNIQUE,
+
+    p256dh TEXT NOT NULL,
+    auth TEXT NOT NULL,
+
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
 `;

@@ -66,6 +66,7 @@ import { SettingsModal } from './components/SettingsModal';
 import { NotificationModal } from './components/NotificationModal';
 import { UjiMateriView } from './components/UjiMateriView';
 import { UpdateCheckerModal } from './components/UpdateCheckerModal';
+import { requestNotificationPermission } from './lib/pushNotifications';
 
 const APP_VERSION = '1.0.0';
 
@@ -82,6 +83,19 @@ export default function App() {
       return null;
     }
   });
+
+  // Request Push Notification permission if logged in
+  useEffect(() => {
+    if (currentStudent?.nis) {
+      // Small delay to prevent blocking the initial render
+      const timer = setTimeout(() => {
+        requestNotificationPermission(currentStudent.nis).catch(err => {
+          console.warn('Failed to check/request push notification permission:', err);
+        });
+      }, 2000);
+      return () => clearTimeout(timer);
+    }
+  }, [currentStudent?.nis]);
 
   // Navigation & UI State
   const [activeTab, setActiveTab] = useState<'overview' | 'kbm-reguler' | 'kbm-tambahan' | 'presensi' | 'perkembangan' | 'uji-materi' | 'nilai' | 'luar-kbm' | 'analisa' | 'd1-config'>('overview');

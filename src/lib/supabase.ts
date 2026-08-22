@@ -60,14 +60,16 @@ export const supabaseUji = createClient(supabaseUjiUrl, supabaseUjiKey);
 export const DB_SETUP_SQL = `-- SCRIPT PEMBUATAN TABEL UNTUK RAPOR SISWA DIGITAL
 -- Copy dan paste script ini di SQL Editor Supabase Anda.
 
--- 0. Tabel Langganan OneSignal (onesignal_subscriptions)
-CREATE TABLE IF NOT EXISTS public.onesignal_subscriptions (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  subscription_id TEXT NULL,
-  nis TEXT NULL,
-  platform TEXT NULL DEFAULT 'web'::TEXT,
-  user_agent TEXT NULL,
-  updated_at TIMESTAMP WITH TIME ZONE NULL DEFAULT NOW()
+-- 0. Tabel Langganan Web Push (push_subscriptions_siswa)
+CREATE TABLE IF NOT EXISTS public.push_subscriptions_siswa (
+    id TEXT PRIMARY KEY NOT NULL,
+    nis TEXT NOT NULL,
+    nama_siswa TEXT NOT NULL,
+    endpoint TEXT NOT NULL UNIQUE,
+    p256dh TEXT NOT NULL,
+    auth TEXT NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
 -- 1. Tabel Utama Data Siswa (Sesuai Skema Anda)
