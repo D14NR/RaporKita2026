@@ -56,7 +56,13 @@ export const UpdateCheckerModal: React.FC<UpdateCheckerModalProps> = ({
 
       if (!response.ok) throw new Error('Gagal mengambil informasi versi');
 
-      const config: AppConfig = await response.json();
+      const responseText = await response.text();
+      if (!responseText || responseText.trim().startsWith('<') || responseText.includes('Offline')) {
+        // Not valid JSON (e.g. SPA fallback index.html or offline message)
+        return;
+      }
+
+      const config: AppConfig = JSON.parse(responseText);
       setUpdateConfig(config);
 
       // Compare versions

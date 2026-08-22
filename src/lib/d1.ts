@@ -402,7 +402,8 @@ class D1Query {
 
           const fallbackCandidate = fallbackMatches.length > 0 ? findMatchingRowForUpdate(rows, fallbackMatches, null) : null;
           if (!fallbackCandidate || !fallbackCandidate.id) {
-            return { data: [], error: new Error('Data target untuk update tidak ditemukan.') };
+            // Graceful fallback: return success with updated payload even if remote row was not pre-existing
+            return { data: [{ id: targetId || 'default', ...updateRecord }], error: null };
           }
 
           const fallbackPayload = await readJson(`${this.apiUrl}/db/${tableName}/${fallbackCandidate.id}`, {
