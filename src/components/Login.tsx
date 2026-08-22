@@ -15,7 +15,8 @@ import {
   UserCheck,
   Sparkles,
   Search,
-  X
+  X,
+  Trash2
 } from 'lucide-react';
 import { d1 } from '../lib/d1';
 import { DataSiswa } from '../types';
@@ -75,6 +76,59 @@ export default function Login({ onLoginSuccess, useD1, dbStatus, onToggleDemoMod
   const [searchResult, setSearchResult] = useState<any[] | null>(null);
   const [isSearching, setIsSearching] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
+
+  // Clear Cache & History States
+  const [isClearingCache, setIsClearingCache] = useState(false);
+  const [clearCacheProgress, setClearCacheProgress] = useState(0);
+  const [clearCacheStatus, setClearCacheStatus] = useState('');
+
+  const handleClearCacheAndHistory = async () => {
+    if (isClearingCache) return;
+    if (!window.confirm('Apakah Anda yakin ingin membersihkan seluruh cache, history, dan sesi aplikasi? Tindakan ini akan memuat ulang halaman.')) {
+      return;
+    }
+
+    setIsClearingCache(true);
+    setClearCacheProgress(15);
+    setClearCacheStatus('Memeriksa penyimpanan lokal...');
+    await delay(300);
+
+    try {
+      setClearCacheProgress(35);
+      setClearCacheStatus('Menghapus data sesi dan cache lokal...');
+      localStorage.clear();
+      sessionStorage.clear();
+      await delay(400);
+
+      setClearCacheProgress(70);
+      setClearCacheStatus('Membersihkan cache browser & PWA...');
+      if ('caches' in window) {
+        const cacheNames = await caches.keys();
+        await Promise.all(cacheNames.map(name => caches.delete(name)));
+      }
+      await delay(400);
+
+      setClearCacheProgress(90);
+      setClearCacheStatus('Memperbarui Service Worker...');
+      if ('serviceWorker' in navigator) {
+        const registrations = await navigator.serviceWorker.getRegistrations();
+        for (const reg of registrations) {
+          await reg.unregister();
+        }
+      }
+      await delay(500);
+
+      setClearCacheProgress(100);
+      setClearCacheStatus('Pembersihan berhasil! Memuat ulang aplikasi...');
+      await delay(700);
+
+      window.location.reload();
+    } catch (err) {
+      console.error('Error clearing cache:', err);
+      setClearCacheStatus('Terjadi kesalahan saat membersihkan cache.');
+      setIsClearingCache(false);
+    }
+  };
 
   const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -497,6 +551,40 @@ export default function Login({ onLoginSuccess, useD1, dbStatus, onToggleDemoMod
                   <>
                     <span>Masuk ke Rapor Siswa</span>
                     <ArrowRight className="h-4 w-4" />
+                  </>
+                )}
+              </button>
+            </div>
+
+            {/* Clear Cache & History Button with Progress */}
+            <div className="mt-3 pt-3 border-t border-slate-100">
+              <button
+                id="btn-clear-cache"
+                type="button"
+                onClick={handleClearCacheAndHistory}
+                disabled={isLoading || isClearingCache}
+                className="w-full flex justify-center items-center gap-2 py-3 px-4 border border-slate-200 rounded-2xl shadow-sm text-xs font-bold text-slate-700 bg-slate-50 hover:bg-slate-100 hover:border-slate-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-slate-400 disabled:opacity-75 transition-all cursor-pointer"
+              >
+                {isClearingCache ? (
+                  <div className="flex items-center gap-2 w-full">
+                    <Loader2 className="animate-spin h-4 w-4 text-sky-600 shrink-0" />
+                    <div className="flex-1 min-w-0 text-left">
+                      <div className="flex justify-between items-center text-[10px] mb-1">
+                        <span className="font-semibold text-slate-600 truncate">{clearCacheStatus}</span>
+                        <span className="font-black text-sky-600">{clearCacheProgress}%</span>
+                      </div>
+                      <div className="w-full bg-slate-200 rounded-full h-1.5 overflow-hidden">
+                        <div 
+                          className="bg-sky-600 h-1.5 rounded-full transition-all duration-300"
+                          style={{ width: `${clearCacheProgress}%` }}
+                        ></div>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <Trash2 className="h-4 w-4 text-slate-500" />
+                    <span>Bersihkan Cache & History</span>
                   </>
                 )}
               </button>
