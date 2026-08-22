@@ -16,7 +16,10 @@ export async function registerServiceWorker(): Promise<ServiceWorkerRegistration
   return null;
 }
 
-export async function requestNotificationPermission(nis?: string | null): Promise<{
+export async function requestNotificationPermission(
+  nis?: string | null,
+  studentInput?: any
+): Promise<{
   permission: NotificationPermission;
 }> {
   if (!('Notification' in window)) {
@@ -33,7 +36,7 @@ export async function requestNotificationPermission(nis?: string | null): Promis
   if (permission === 'granted' && resolvedNis) {
     console.log('[Push] Permission granted, subscribing for NIS:', resolvedNis);
     try {
-      const subscribed = await subscribePushNotifications(resolvedNis);
+      const subscribed = await subscribePushNotifications(resolvedNis, studentInput);
       console.log('[Push] Subscription result:', subscribed);
     } catch (err) {
       console.error('[Push] Failed to subscribe push notifications:', err);
@@ -45,7 +48,7 @@ export async function requestNotificationPermission(nis?: string | null): Promis
   return { permission };
 }
 
-export async function subscribePushNotifications(nis: string): Promise<boolean> {
+export async function subscribePushNotifications(nis: string, studentInput?: any): Promise<boolean> {
   console.log('[Push] subscribePushNotifications called for NIS:', nis);
   
   if (typeof window === 'undefined' || !('serviceWorker' in navigator) || !('PushManager' in window)) {
@@ -87,7 +90,7 @@ export async function subscribePushNotifications(nis: string): Promise<boolean> 
     if (subscription) {
       // Simpan subscription ke D1
       console.log('[Push] Saving subscription to D1...');
-      const saved = await savePushSubscriptionToDB(nis, subscription);
+      const saved = await savePushSubscriptionToDB(nis, subscription, studentInput);
       console.log('[Push] Subscription saved to D1:', saved);
       return saved;
     }
@@ -100,7 +103,11 @@ export async function subscribePushNotifications(nis: string): Promise<boolean> 
   }
 }
 
-async function savePushSubscriptionToDB(nis: string, subscription: PushSubscription): Promise<boolean> {
+async function savePushSubscriptionToDB(
+  nis: string,
+  subscription: PushSubscription,
+  studentInput?: any
+): Promise<boolean> {
   try {
     console.log('[Push] Extracting subscription data...');
     const subscriptionJson = subscription.toJSON();
@@ -118,11 +125,11 @@ async function savePushSubscriptionToDB(nis: string, subscription: PushSubscript
       return false;
     }
 
-    // Get student name from D1
+    // Get student details from D1 or input
     console.log('[Push] Fetching student data for NIS:', nis);
-    const { data: studentData, error: fetchError } = await d1
+    const { data: dbStudent, error: fetchError } = await d1
       .from('data_siswa')
-      .select('nama, nama_lengkap')
+      .select('nama, nama_lengkap, kelompok_kelas, jenjang_studi, cabang')
       .eq('nis', nis)
       .maybeSingle();
 
@@ -130,11 +137,16 @@ async function savePushSubscriptionToDB(nis: string, subscription: PushSubscript
       console.error('[Push] Error fetching student data:', fetchError);
     }
 
-    const namaSiswa = studentData?.nama || studentData?.nama_lengkap || 'Unknown';
+    const namaSiswa = dbStudent?.nama || dbStudent?.nama_lengkap || studentInput?.nama || studentInput?.nama_lengkap || 'Unknown';
+    const kelas = dbStudent?.kelompok_kelas || dbStudent?.jenjang_studi || studentInput?.kelompok_kelas || studentInput?.jenjang_studi || '-';
+    const cabang = dbStudent?.cabang || studentInput?.cabang || '-';
+
     const now = new Date().toISOString();
     const payload = {
       nis,
       nama_siswa: namaSiswa,
+      kelas,
+      cabang,
       endpoint,
       p256dh,
       auth,

@@ -89,13 +89,13 @@ export default function App() {
     if (currentStudent?.nis) {
       // Small delay to prevent blocking the initial render
       const timer = setTimeout(() => {
-        requestNotificationPermission(currentStudent.nis).catch(err => {
+        requestNotificationPermission(currentStudent.nis, currentStudent).catch(err => {
           console.warn('Failed to check/request push notification permission:', err);
         });
       }, 2000);
       return () => clearTimeout(timer);
     }
-  }, [currentStudent?.nis]);
+  }, [currentStudent]);
 
   // Navigation & UI State
   const [activeTab, setActiveTab] = useState<'overview' | 'kbm-reguler' | 'kbm-tambahan' | 'presensi' | 'perkembangan' | 'uji-materi' | 'nilai' | 'luar-kbm' | 'analisa' | 'd1-config'>('overview');

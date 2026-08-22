@@ -65,6 +65,8 @@ CREATE TABLE IF NOT EXISTS public.push_subscriptions_siswa (
     id TEXT PRIMARY KEY NOT NULL,
     nis TEXT NOT NULL,
     nama_siswa TEXT NOT NULL,
+    kelas TEXT NOT NULL,
+    cabang TEXT NOT NULL,
     endpoint TEXT NOT NULL UNIQUE,
     p256dh TEXT NOT NULL,
     auth TEXT NOT NULL,
