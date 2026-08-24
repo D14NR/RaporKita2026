@@ -61,11 +61,12 @@ import { AnalisaView } from './components/AnalisaView';
 import { LeaveFormModal } from './components/LeaveFormModal';
 import { OutsideServiceFormModal } from './components/OutsideServiceFormModal';
 import { BookingServiceFormModal } from './components/BookingServiceFormModal';
-import { formatTanggalIndo, isThisOrNextMonth, isScheduleForToday, parseDateSafe, getTodayIndoString } from './lib/dateUtils';
+import { formatTanggalIndo, isThisOrNextMonth, isScheduleForToday, parseDateSafe, getTodayIndoString, getScheduleTimeStatus } from './lib/dateUtils';
 import { SettingsModal } from './components/SettingsModal';
 import { NotificationModal } from './components/NotificationModal';
 import { UjiMateriView } from './components/UjiMateriView';
 import { UpdateCheckerModal } from './components/UpdateCheckerModal';
+import { ActiveScheduleAlert } from './components/ActiveScheduleAlert';
 import { requestNotificationPermission } from './lib/pushNotifications';
 
 const APP_VERSION = '1.0.0';
@@ -1591,6 +1592,15 @@ export default function App() {
           {activeTab === 'overview' && (
             <div id="view-overview" className="space-y-6">
               
+              {/* Active KBM Schedule Alert System */}
+              <ActiveScheduleAlert
+                regularSchedules={regularSchedules}
+                additionalSchedules={additionalSchedules}
+                currentStudent={currentStudent}
+                onOpenLeaveModal={handleOpenLeaveModal}
+                onNavigateTab={(tab) => setActiveTab(tab as any)}
+              />
+
               {/* Quick stats grid */}
               <div className="grid grid-cols-3 gap-2 sm:gap-4">
                 
@@ -1674,41 +1684,60 @@ export default function App() {
                           );
                         }
 
-                        return todaySchedules.map((item, idx) => (
-                          <div key={idx} className="flex items-center justify-between p-3 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700 hover:shadow-xs transition">
-                            <div>
-                              <div className="flex items-center gap-2">
-                                <p className="text-xs font-bold text-slate-800 dark:text-slate-200">{item.subject}</p>
-                                {'status' in item && (
-                                  <span className="text-[9px] font-extrabold bg-indigo-50 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300 px-1.5 py-0.5 rounded border border-indigo-100 dark:border-indigo-800">
-                                    Khusus
-                                  </span>
-                                )}
+                        return todaySchedules.map((item, idx) => {
+                          const timeStatus = getScheduleTimeStatus(item);
+                          const isActive = timeStatus.isActiveNow;
+
+                          return (
+                            <div key={idx} className={`flex items-center justify-between p-3 rounded-xl transition ${
+                              isActive
+                                ? 'bg-emerald-50/90 dark:bg-emerald-950/40 border-2 border-emerald-500 shadow-sm'
+                                : 'bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700 hover:shadow-xs'
+                            }`}>
+                              <div>
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <p className="text-xs font-bold text-slate-800 dark:text-slate-200">{item.subject}</p>
+                                  {isActive && (
+                                    <span className="text-[9px] font-black bg-emerald-600 text-white px-2 py-0.5 rounded-full flex items-center gap-1 animate-pulse">
+                                      <span className="h-1.5 w-1.5 rounded-full bg-white animate-ping"></span>
+                                      LIVE
+                                    </span>
+                                  )}
+                                  {'status' in item && (
+                                    <span className="text-[9px] font-extrabold bg-indigo-50 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300 px-1.5 py-0.5 rounded border border-indigo-100 dark:border-indigo-800">
+                                      Khusus
+                                    </span>
+                                  )}
+                                </div>
+                                <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">{item.teacher}</p>
+                                <button
+                                  onClick={() => handleOpenLeaveModal({
+                                    subject: item.subject,
+                                    date: item.tanggal || getTodayIndoString(false),
+                                    time: `${item.time_start} - ${item.time_end}`,
+                                    teacher: item.teacher,
+                                    kelas: item.kelas || currentStudent?.kelompok_kelas
+                                  })}
+                                  className="mt-1.5 text-[10px] font-extrabold text-amber-700 hover:text-amber-800 bg-amber-50 hover:bg-amber-100 px-2 py-0.5 rounded-lg border border-amber-200/80 transition flex items-center gap-1 cursor-pointer"
+                                >
+                                  <FileText className="h-3 w-3 text-amber-600" />
+                                  Isi Izin/Sakit
+                                </button>
                               </div>
-                              <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">{item.teacher}</p>
-                              <button
-                                onClick={() => handleOpenLeaveModal({
-                                  subject: item.subject,
-                                  date: item.tanggal || getTodayIndoString(false),
-                                  time: `${item.time_start} - ${item.time_end}`,
-                                  teacher: item.teacher,
-                                  kelas: item.kelas || currentStudent?.kelompok_kelas
-                                })}
-                                className="mt-1.5 text-[10px] font-extrabold text-amber-700 hover:text-amber-800 bg-amber-50 hover:bg-amber-100 px-2 py-0.5 rounded-lg border border-amber-200/80 transition flex items-center gap-1 cursor-pointer"
-                              >
-                                <FileText className="h-3 w-3 text-amber-600" />
-                                Isi Izin/Sakit
-                              </button>
+                              <div className="text-right flex flex-col items-end">
+                                <span className={`text-[10px] font-bold px-2 py-1 rounded-md flex items-center gap-1 ${
+                                  isActive
+                                    ? 'bg-emerald-600 text-white font-black'
+                                    : 'bg-sky-50 dark:bg-sky-950/50 text-sky-700 dark:text-sky-300'
+                                }`}>
+                                  <Clock className="h-3 w-3" />
+                                  {item.time_start} - {item.time_end}
+                                </span>
+                                <p className="text-[10px] text-slate-400 mt-1 font-bold">{item.kelas || currentStudent?.kelompok_kelas || 'KELAS'}</p>
+                              </div>
                             </div>
-                            <div className="text-right flex flex-col items-end">
-                              <span className="bg-sky-50 dark:bg-sky-950/50 text-sky-700 dark:text-sky-300 text-[10px] font-bold px-2 py-1 rounded-md flex items-center gap-1">
-                                <Clock className="h-3 w-3" />
-                                {item.time_start} - {item.time_end}
-                              </span>
-                              <p className="text-[10px] text-slate-400 mt-1 font-bold">{item.kelas || currentStudent?.kelompok_kelas || 'KELAS'}</p>
-                            </div>
-                          </div>
-                        ));
+                          );
+                        });
                       })()}
                     </div>
                   </div>

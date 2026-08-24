@@ -199,3 +199,65 @@ export function isScheduleForToday(item: { tanggal?: string | null; day?: string
 
   return false;
 }
+
+export interface ScheduleTimeStatus {
+  isToday: boolean;
+  isActiveNow: boolean;
+  isUpcomingSoon: boolean;
+  minutesRemaining: number;
+  minutesUntilStart: number;
+  startMin: number | null;
+  endMin: number | null;
+}
+
+export function parseTimeInMinutes(timeStr?: string | null): number | null {
+  if (!timeStr) return null;
+  const clean = String(timeStr).trim().replace('.', ':');
+  const parts = clean.split(':');
+  if (parts.length < 2) return null;
+  const hours = parseInt(parts[0], 10);
+  const minutes = parseInt(parts[1], 10);
+  if (isNaN(hours) || isNaN(minutes)) return null;
+  return hours * 60 + minutes;
+}
+
+export function getScheduleTimeStatus(
+  item: { tanggal?: string | null; day?: string | null; time_start?: string | null; time_end?: string | null } | null | undefined,
+  simulatedTimeMinutes?: number | null
+): ScheduleTimeStatus {
+  const result: ScheduleTimeStatus = {
+    isToday: false,
+    isActiveNow: false,
+    isUpcomingSoon: false,
+    minutesRemaining: 0,
+    minutesUntilStart: 0,
+    startMin: null,
+    endMin: null,
+  };
+
+  if (!item) return result;
+  result.isToday = isScheduleForToday(item);
+  if (!result.isToday) return result;
+
+  const startMin = parseTimeInMinutes(item.time_start);
+  const endMin = parseTimeInMinutes(item.time_end);
+  result.startMin = startMin;
+  result.endMin = endMin;
+
+  if (startMin === null || endMin === null) return result;
+
+  const now = new Date();
+  const currentMin = simulatedTimeMinutes !== undefined && simulatedTimeMinutes !== null
+    ? simulatedTimeMinutes
+    : (now.getHours() * 60 + now.getMinutes());
+
+  if (currentMin >= startMin && currentMin < endMin) {
+    result.isActiveNow = true;
+    result.minutesRemaining = endMin - currentMin;
+  } else if (currentMin < startMin && (startMin - currentMin) <= 45) {
+    result.isUpcomingSoon = true;
+    result.minutesUntilStart = startMin - currentMin;
+  }
+
+  return result;
+}
