@@ -71,14 +71,14 @@ export const ActiveScheduleAlert: React.FC<ActiveScheduleAlertProps> = ({
     }
   });
 
-  // Handle browser push & database notification creation for 30 min reminders
+  // Handle browser push & database notification creation for 1 hour (60 min) reminders
   useEffect(() => {
     if (!currentStudent?.nis || upcomingSchedules.length === 0) return;
 
     upcomingSchedules.forEach(({ item, status }) => {
-      if (status.minutesUntilStart <= 30 && status.minutesUntilStart > 0) {
+      if (status.minutesUntilStart <= 60 && status.minutesUntilStart > 0) {
         const todayDate = getTodayIndoString(false);
-        const dedupeKey = `notif_30m_${currentStudent.nis}_${item.subject}_${todayDate}_${item.time_start}`;
+        const dedupeKey = `notif_1h_${currentStudent.nis}_${item.subject}_${todayDate}_${item.time_start}`;
 
         if (!localStorage.getItem(dedupeKey)) {
           localStorage.setItem(dedupeKey, '1');
@@ -106,7 +106,7 @@ export const ActiveScheduleAlert: React.FC<ActiveScheduleAlertProps> = ({
           // 2. Trigger browser Desktop Notification if granted
           if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
             try {
-              new Notification(`⏰ Pengingat KBM 30 Menit - ${item.subject}`, {
+              new Notification(`⏰ Pengingat KBM 1 Jam - ${item.subject}`, {
                 body: `KBM ${item.subject} akan dimulai dalam ${status.minutesUntilStart} menit (${item.time_start} WIB) bersama ${item.teacher || 'Pengajar'}. Persiapkan diri Anda!`,
                 icon: '/pwa-192x192.png'
               });
@@ -120,16 +120,16 @@ export const ActiveScheduleAlert: React.FC<ActiveScheduleAlertProps> = ({
             method: 'POST',
             headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
             body: JSON.stringify({
-              id: `NOTIF-30M-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+              id: `NOTIF-1H-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
               nis: currentStudent.nis,
               nama_siswa: currentStudent.nama_lengkap || 'Siswa',
               siswa_id: currentStudent.id,
               tipe_notifikasi: 'Jadwal',
-              pesan: `⏰ PENGINGAT 30 MENIT: KBM ${item.subject} (${item.isKhusus ? 'Kelas Khusus' : 'Reguler'}) akan dimulai pukul ${item.time_start} WIB bersama ${item.teacher || 'Pengajar'}.`,
+              pesan: `⏰ PENGINGAT 1 JAM: KBM ${item.subject} (${item.isKhusus ? 'Kelas Khusus' : 'Reguler'}) akan dimulai pukul ${item.time_start} WIB bersama ${item.teacher || 'Pengajar'}.`,
               status_baca: 0,
               created_at: new Date().toISOString()
             })
-          }).catch(err => console.warn('Gagal menyimpan notifikasi 30M ke database:', err));
+          }).catch(err => console.warn('Gagal menyimpan notifikasi 1H ke database:', err));
         }
       }
     });
@@ -347,7 +347,7 @@ export const ActiveScheduleAlert: React.FC<ActiveScheduleAlertProps> = ({
         })
       ) : null}
 
-      {/* 30-MINUTE UPCOMING KBM REMINDERS */}
+      {/* 1-HOUR UPCOMING KBM REMINDERS */}
       {upcomingSchedules.length > 0 && (
         upcomingSchedules.map(({ item, status }, idx) => (
           <div
@@ -359,7 +359,7 @@ export const ActiveScheduleAlert: React.FC<ActiveScheduleAlertProps> = ({
                 <div className="flex items-center gap-2 mb-2 flex-wrap">
                   <span className="inline-flex items-center gap-1.5 bg-black/25 backdrop-blur-md text-amber-100 text-[10px] font-black px-3 py-1 rounded-full border border-amber-300/30 uppercase tracking-wider">
                     <Bell className="h-3 w-3 text-amber-300 animate-bounce" />
-                    PENGINGAT 30 MENIT • KBM SEGERA DIMULAI
+                    PENGINGAT 1 JAM • KBM SEGERA DIMULAI
                   </span>
                   {item.isKhusus && (
                     <span className="bg-indigo-900/40 text-indigo-100 text-[10px] font-bold px-2 py-0.5 rounded-full border border-indigo-300/30">

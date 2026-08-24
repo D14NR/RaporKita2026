@@ -252,7 +252,7 @@ export function getScheduleTimeStatus(
   if (currentMin >= startMin && currentMin < endMin) {
     result.isActiveNow = true;
     result.minutesRemaining = endMin - currentMin;
-  } else if (currentMin < startMin && (startMin - currentMin) <= 30) {
+  } else if (currentMin < startMin && (startMin - currentMin) <= 60) {
     result.isUpcomingSoon = true;
     result.minutesUntilStart = startMin - currentMin;
   }
