@@ -102,8 +102,8 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Skip API calls
-  if (event.request.url.includes('/api/') || event.request.url.includes('/db/')) {
+  // Skip API calls & config checks
+  if (event.request.url.includes('/api/') || event.request.url.includes('/db/') || event.request.url.includes('app_config.json')) {
     return;
   }
 

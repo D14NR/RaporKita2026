@@ -149,3 +149,53 @@ export function isThisOrNextMonth(input: string | Date | number | null | undefin
 
   return isCurrentMonth || isNextMonth;
 }
+
+/**
+ * Checks if a schedule item falls on today's date or today's day of week.
+ */
+export function isScheduleForToday(item: { tanggal?: string | null; day?: string | null } | null | undefined): boolean {
+  if (!item) return false;
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const currentMonth = now.getMonth(); // 0..11
+  const currentDate = now.getDate();
+  const todayYMD = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-${String(currentDate).padStart(2, '0')}`;
+
+  const cleanTanggal = item.tanggal ? String(item.tanggal).trim() : '';
+
+  if (cleanTanggal) {
+    // 1. Direct YYYY-MM-DD match or prefix (e.g. "2026-08-24" or "2026-08-24 00:00:00")
+    if (cleanTanggal === todayYMD || cleanTanggal.startsWith(todayYMD)) {
+      return true;
+    }
+
+    // 2. Parsed Date object match
+    const parsed = parseDateSafe(cleanTanggal);
+    if (parsed) {
+      if (
+        parsed.getFullYear() === currentYear &&
+        parsed.getMonth() === currentMonth &&
+        parsed.getDate() === currentDate
+      ) {
+        return true;
+      }
+    } else {
+      // 3. String might be Indonesian day name e.g. "Senin"
+      const todayDayName = DAYS_INDO[now.getDay()];
+      if (cleanTanggal.toLowerCase() === todayDayName.toLowerCase()) {
+        return true;
+      }
+    }
+  }
+
+  // 4. Day property match e.g. item.day === "Senin"
+  if (item.day) {
+    const cleanDay = String(item.day).trim();
+    const todayDayName = DAYS_INDO[now.getDay()];
+    if (cleanDay.toLowerCase() === todayDayName.toLowerCase()) {
+      return true;
+    }
+  }
+
+  return false;
+}

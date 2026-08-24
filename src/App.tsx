@@ -61,7 +61,7 @@ import { AnalisaView } from './components/AnalisaView';
 import { LeaveFormModal } from './components/LeaveFormModal';
 import { OutsideServiceFormModal } from './components/OutsideServiceFormModal';
 import { BookingServiceFormModal } from './components/BookingServiceFormModal';
-import { formatTanggalIndo, isThisOrNextMonth } from './lib/dateUtils';
+import { formatTanggalIndo, isThisOrNextMonth, isScheduleForToday, parseDateSafe, getTodayIndoString } from './lib/dateUtils';
 import { SettingsModal } from './components/SettingsModal';
 import { NotificationModal } from './components/NotificationModal';
 import { UjiMateriView } from './components/UjiMateriView';
@@ -898,25 +898,17 @@ export default function App() {
         let queryKhusus = d1Kbm.from('jadwal_khusus').select('*');
         
         // Match with the active student's profile data
-        const activeCabang = selectedStudentData?.cabang || currentStudent.cabang;
-        const activeJenjang = selectedStudentData?.jenjang_studi || currentStudent.jenjang_studi;
-        const activeSekolah = selectedStudentData?.asal_sekolah || currentStudent.asal_sekolah;
-        const activeKelas = selectedStudentData?.kelompok_kelas || currentStudent.kelompok_kelas;
+        const activeCabang = (selectedStudentData?.cabang || currentStudent.cabang || '').trim();
+        const activeJenjang = (selectedStudentData?.jenjang_studi || currentStudent.jenjang_studi || '').trim();
+        const activeKelas = (selectedStudentData?.kelompok_kelas || currentStudent.kelompok_kelas || '').trim();
         
         if (activeCabang) {
           queryReg = queryReg.eq('cabang', activeCabang);
           queryKhusus = queryKhusus.eq('cabang', activeCabang);
         }
-        if (activeJenjang) {
-          queryReg = queryReg.eq('jenjang_studi', activeJenjang);
-          queryKhusus = queryKhusus.eq('jenjang_studi', activeJenjang);
-        }
-        if (activeSekolah) {
-          queryKhusus = queryKhusus.eq('sekolah', activeSekolah);
-        }
 
-        queryReg = queryReg.order('class_order', { ascending: true }).limit(100);
-        queryKhusus = queryKhusus.order('tanggal', { ascending: false }).order('class_order', { ascending: true }).limit(100);
+        queryReg = queryReg.order('class_order', { ascending: true }).limit(200);
+        queryKhusus = queryKhusus.order('tanggal', { ascending: false }).order('class_order', { ascending: true }).limit(200);
         
         const [regRes, khususRes] = await Promise.all([queryReg, queryKhusus]);
 
@@ -926,52 +918,107 @@ export default function App() {
         const rawRegSchedules = (regRes.data || []);
         const rawKhususSchedules = (khususRes.data || []);
         
-        // Parse the student's enrolled subjects from their profile
-        const normalizeSubject = (value: any) => String(value ?? '').trim().toLowerCase().replace(/\s+/g, ' ');
-        const studentSubjects = (selectedStudentData?.mata_pelajaran || currentStudent.mata_pelajaran)
-          ? (selectedStudentData?.mata_pelajaran || currentStudent.mata_pelajaran)
-              .split(/[;,]/)
-              .map((s: string) => normalizeSubject(s))
-              .filter(Boolean)
-          : [];
+        // Extract student subjects list cleanly (from state or student profile)
+        const getStudentSubjectsList = (): string[] => {
+          const raw = profileSelectedSubjects.length > 0
+            ? profileSelectedSubjects
+            : (selectedStudentData?.mata_pelajaran || currentStudent?.mata_pelajaran);
 
-        const isRegularScheduleMatch = (row: any) => {
-          const rowJenis = normalizeSubject(row?.jenis_kbm || row?.jenis || row?.tipe || '');
-          if (rowJenis && rowJenis !== 'reguler') {
+          if (!raw) return [];
+
+          let list: string[] = [];
+          if (Array.isArray(raw)) {
+            list = raw.map(s => String(s));
+          } else if (typeof raw === 'string') {
+            list = raw.split(/[;,]/);
+          }
+
+          return list
+            .map(s => String(s).trim().toLowerCase().replace(/\s+/g, ' '))
+            .filter(Boolean);
+        };
+
+        const studentSubjects = getStudentSubjectsList();
+        const normalize = (val: any) => String(val || '').trim().toLowerCase().replace(/\s+/g, ' ');
+
+        const isScheduleMatch = (row: any, targetJenis: 'Reguler' | 'Khusus') => {
+          if (!row) return false;
+
+          // 1. Check KBM type
+          const rowJenis = normalize(row.jenis_kbm || row.jenis || row.tipe);
+          if (rowJenis) {
+            if (targetJenis === 'Reguler' && rowJenis !== 'reguler') return false;
+            if (targetJenis === 'Khusus' && rowJenis !== 'khusus') return false;
+          }
+
+          // 2. Check Jenjang Studi & Kelompok Kelas
+          if (activeJenjang || activeKelas) {
+            const rowJenjang = normalize(row.jenjang_studi || row.jenjang);
+            const rowKelas = normalize(row.kelompok_kelas || row.kelas);
+            const normJenjang = normalize(activeJenjang);
+            const normKelas = normalize(activeKelas);
+
+            let matchesJenjangOrKelas = false;
+
+            if (normJenjang) {
+              if (rowJenjang && (rowJenjang.includes(normJenjang) || normJenjang.includes(rowJenjang))) {
+                matchesJenjangOrKelas = true;
+              }
+              if (rowKelas && (rowKelas.includes(normJenjang) || normJenjang.includes(rowKelas))) {
+                matchesJenjangOrKelas = true;
+              }
+            }
+
+            if (!matchesJenjangOrKelas && normKelas && rowKelas) {
+              if (rowKelas.includes(normKelas) || normKelas.includes(rowKelas)) {
+                matchesJenjangOrKelas = true;
+              }
+            }
+
+            if ((normJenjang || normKelas) && (rowJenjang || rowKelas) && !matchesJenjangOrKelas) {
+              return false;
+            }
+          }
+
+          // 3. Check Mata Pelajaran
+          const rowSubjectRaw = row.mata_pelajaran || row.mapel || row.subject || row.nama_mapel || row.pelajaran;
+          const rowSubject = normalize(rowSubjectRaw);
+
+          // Reject placeholder/empty subject rows
+          if (!rowSubject || rowSubject === 'mata pelajaran' || rowSubject === '-') {
             return false;
           }
 
-          if (!studentSubjects.length) return true;
+          if (studentSubjects.length > 0) {
+            const subjectMatch = studentSubjects.some(subj => {
+              return rowSubject.includes(subj) || subj.includes(rowSubject);
+            });
+            if (!subjectMatch) return false;
+          }
 
-          const subjectCandidates = [
-            row?.mata_pelajaran,
-            row?.mapel,
-            row?.subject,
-            row?.nama_mata_pelajaran,
-            row?.nama_pelajaran
-          ].filter(Boolean);
-
-          if (!subjectCandidates.length) return true;
-
-          return subjectCandidates.some((candidate) => studentSubjects.includes(normalizeSubject(candidate)));
+          return true;
         };
 
-        const filteredRegSchedules = (rawRegSchedules || []).filter(isRegularScheduleMatch);
+        const filteredRegSchedules = rawRegSchedules.filter((row: any) => isScheduleMatch(row, 'Reguler'));
+        const filteredKhususSchedules = rawKhususSchedules.filter((row: any) => isScheduleMatch(row, 'Khusus'));
 
         let mappedRegSchedules: RegularSchedule[] = filteredRegSchedules.map((row: any) => {
-          const waktuParts = (row.waktu || '').split('-');
+          const waktuStr = String(row.waktu || row.jam || row.time || '');
+          const waktuParts = waktuStr.split('-');
           const time_start = waktuParts[0]?.trim() || '';
           const time_end = waktuParts[1]?.trim() || '';
 
-          const subjectName = row.mata_pelajaran || row.mapel || row.subject || 'Mata Pelajaran';
-          const teacherName = row.nama_pengajar || row.pengajar || 'Pengajar';
+          const subjectName = String(row.mata_pelajaran || row.mapel || row.subject || row.nama_mapel || row.pelajaran || '').trim() || 'Mata Pelajaran';
+          const teacherName = String(row.nama_pengajar || row.pengajar || row.tentor || row.guru || '').trim() || 'Pengajar';
 
-          let dayName = 'Senin';
+          let dayName = row.hari || 'Senin';
           if (row.tanggal) {
-            const date = new Date(row.tanggal);
-            if (!isNaN(date.getTime())) {
+            const date = parseDateSafe(row.tanggal);
+            if (date) {
               const days = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
               dayName = days[date.getDay()];
+            } else if (typeof row.tanggal === 'string' && row.tanggal.trim()) {
+              dayName = row.tanggal.trim();
             }
           }
 
@@ -983,23 +1030,24 @@ export default function App() {
             time_start,
             time_end,
             teacher: teacherName,
-            classroom: row.sekolah || '',
+            classroom: row.sekolah || row.kelompok_kelas || row.kelas || '',
             tanggal: row.tanggal,
-            kelas: row.kelas
+            kelas: row.kelompok_kelas || row.kelas
           };
         });
 
-        let mappedKhususSchedules: AdditionalSchedule[] = rawKhususSchedules.map((row: any) => {
-          const waktuParts = (row.waktu || '').split('-');
+        let mappedKhususSchedules: AdditionalSchedule[] = filteredKhususSchedules.map((row: any) => {
+          const waktuStr = String(row.waktu || row.jam || row.time || '');
+          const waktuParts = waktuStr.split('-');
           const time_start = waktuParts[0]?.trim() || '';
           const time_end = waktuParts[1]?.trim() || '';
           
-          let dayName = 'Senin';
+          let dayName = row.hari || 'Senin';
           let status = 'Aktif';
           
           if (row.tanggal) {
-            const date = new Date(row.tanggal);
-            if (!isNaN(date.getTime())) {
+            const date = parseDateSafe(row.tanggal);
+            if (date) {
               const days = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
               dayName = days[date.getDay()];
               
@@ -1009,6 +1057,8 @@ export default function App() {
               if (dateTime < todayTime) {
                   status = 'Selesai';
               }
+            } else if (typeof row.tanggal === 'string' && row.tanggal.trim()) {
+              dayName = row.tanggal.trim();
             }
           }
 
@@ -1016,13 +1066,13 @@ export default function App() {
             id: row.id,
             student_id: selectedStudentId,
             day: dayName,
-            subject: row.mapel || 'Mata Pelajaran',
+            subject: String(row.mata_pelajaran || row.mapel || row.subject || row.nama_mapel || row.pelajaran || '').trim() || 'Mata Pelajaran',
             time_start,
             time_end,
-            teacher: row.pengajar || 'Pengajar',
+            teacher: String(row.nama_pengajar || row.pengajar || row.tentor || row.guru || '').trim() || 'Pengajar',
             status: status,
             tanggal: row.tanggal,
-            kelas: row.kelas
+            kelas: row.kelompok_kelas || row.kelas
           };
         });
 
@@ -1044,7 +1094,7 @@ export default function App() {
     };
 
     loadKbmSchedules();
-  }, [selectedStudentId, currentStudent, selectedStudentData, dataRefreshCounter]);
+  }, [selectedStudentId, currentStudent, selectedStudentData, profileSelectedSubjects, dataRefreshCounter]);
 
 
 
@@ -1612,37 +1662,54 @@ export default function App() {
                     </div>
 
                     <div className="space-y-3">
-                      {regularSchedules.filter(item => item.tanggal === todayDateStr).length > 0 ? (
-                        regularSchedules.filter(item => item.tanggal === todayDateStr).map((item, idx) => (
-                        <div key={idx} className="flex items-center justify-between p-3 rounded-xl bg-slate-50 border border-slate-100 hover:shadow-xs transition">
-                          <div>
-                            <p className="text-xs font-bold text-slate-800 dark:text-slate-200">{item.subject}</p>
-                            <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">{item.teacher}</p>
-                            <button
-                              onClick={() => handleOpenLeaveModal({
-                                subject: item.subject,
-                                date: item.tanggal,
-                                time: `${item.time_start} - ${item.time_end}`,
-                                teacher: item.teacher,
-                                kelas: item.kelas || currentStudent?.kelompok_kelas
-                              })}
-                              className="mt-1.5 text-[10px] font-extrabold text-amber-700 hover:text-amber-800 bg-amber-50 hover:bg-amber-100 px-2 py-0.5 rounded-lg border border-amber-200/80 transition flex items-center gap-1"
-                            >
-                              <FileText className="h-3 w-3 text-amber-600" />
-                              Isi Izin/Sakit
-                            </button>
+                      {(() => {
+                        const todaySchedules = [
+                          ...regularSchedules.filter(isScheduleForToday),
+                          ...additionalSchedules.filter(isScheduleForToday)
+                        ];
+
+                        if (todaySchedules.length === 0) {
+                          return (
+                            <p className="text-xs text-slate-500 dark:text-slate-400 text-center py-6">Tidak ada jadwal hari ini.</p>
+                          );
+                        }
+
+                        return todaySchedules.map((item, idx) => (
+                          <div key={idx} className="flex items-center justify-between p-3 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700 hover:shadow-xs transition">
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <p className="text-xs font-bold text-slate-800 dark:text-slate-200">{item.subject}</p>
+                                {'status' in item && (
+                                  <span className="text-[9px] font-extrabold bg-indigo-50 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300 px-1.5 py-0.5 rounded border border-indigo-100 dark:border-indigo-800">
+                                    Khusus
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">{item.teacher}</p>
+                              <button
+                                onClick={() => handleOpenLeaveModal({
+                                  subject: item.subject,
+                                  date: item.tanggal || getTodayIndoString(false),
+                                  time: `${item.time_start} - ${item.time_end}`,
+                                  teacher: item.teacher,
+                                  kelas: item.kelas || currentStudent?.kelompok_kelas
+                                })}
+                                className="mt-1.5 text-[10px] font-extrabold text-amber-700 hover:text-amber-800 bg-amber-50 hover:bg-amber-100 px-2 py-0.5 rounded-lg border border-amber-200/80 transition flex items-center gap-1 cursor-pointer"
+                              >
+                                <FileText className="h-3 w-3 text-amber-600" />
+                                Isi Izin/Sakit
+                              </button>
+                            </div>
+                            <div className="text-right flex flex-col items-end">
+                              <span className="bg-sky-50 dark:bg-sky-950/50 text-sky-700 dark:text-sky-300 text-[10px] font-bold px-2 py-1 rounded-md flex items-center gap-1">
+                                <Clock className="h-3 w-3" />
+                                {item.time_start} - {item.time_end}
+                              </span>
+                              <p className="text-[10px] text-slate-400 mt-1 font-bold">{item.kelas || currentStudent?.kelompok_kelas || 'KELAS'}</p>
+                            </div>
                           </div>
-                          <div className="text-right flex flex-col items-end">
-                            <span className="bg-sky-50 text-sky-700 text-[10px] font-bold px-2 py-1 rounded-md flex items-center gap-1">
-                              <Clock className="h-3 w-3" />
-                              {item.time_start} - {item.time_end}
-                            </span>
-                            <p className="text-[10px] text-slate-400 mt-1 font-bold">{item.kelas || currentStudent?.kelompok_kelas || 'KELAS'}</p>
-                          </div>
-                        </div>
-                      ))) : (
-                        <p className="text-xs text-slate-500 dark:text-slate-400 text-center py-6">Tidak ada jadwal hari ini.</p>
-                      )}
+                        ));
+                      })()}
                     </div>
                   </div>
 

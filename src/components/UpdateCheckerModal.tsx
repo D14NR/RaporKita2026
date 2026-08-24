@@ -46,15 +46,17 @@ export const UpdateCheckerModal: React.FC<UpdateCheckerModalProps> = ({
       const storedVersion = localStorage.getItem('app_installed_version') || CURRENT_CLIENT_VERSION;
       setInstalledVersion(storedVersion);
 
-      const response = await fetch(`/app_config.json?t=${Date.now()}`, {
-        cache: 'no-store',
-        headers: {
-          'Cache-Control': 'no-cache, no-store, must-revalidate',
-          'Pragma': 'no-cache',
-        },
+      const response = await fetch(`/app_config.json?t=${Date.now()}`).catch((fetchErr) => {
+        console.warn('[UpdateChecker] Network or offline issue checking app_config.json:', fetchErr);
+        return null;
       });
 
-      if (!response.ok) throw new Error('Gagal mengambil informasi versi');
+      if (!response || !response.ok) {
+        if (isManual) {
+          alert('Gagal memeriksa pembaruan. Pastikan koneksi internet Anda terhubung.');
+        }
+        return;
+      }
 
       const responseText = await response.text();
       if (!responseText || responseText.trim().startsWith('<') || responseText.includes('Offline')) {
@@ -62,7 +64,14 @@ export const UpdateCheckerModal: React.FC<UpdateCheckerModalProps> = ({
         return;
       }
 
-      const config: AppConfig = JSON.parse(responseText);
+      let config: AppConfig;
+      try {
+        config = JSON.parse(responseText);
+      } catch (parseErr) {
+        console.warn('[UpdateChecker] Invalid JSON in app_config.json:', parseErr);
+        return;
+      }
+
       setUpdateConfig(config);
 
       // Compare versions
@@ -79,7 +88,7 @@ export const UpdateCheckerModal: React.FC<UpdateCheckerModalProps> = ({
         }
       }
     } catch (err) {
-      console.error('Error checking version update:', err);
+      console.warn('[UpdateChecker] Unable to complete version check:', err);
       if (isManual) {
         alert('Gagal memeriksa pembaruan. Pastikan koneksi internet Anda terhubung.');
       }
