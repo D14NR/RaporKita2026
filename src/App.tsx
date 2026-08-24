@@ -948,40 +948,67 @@ export default function App() {
           // 1. Check KBM type
           const rowJenis = normalize(row.jenis_kbm || row.jenis || row.tipe);
           if (rowJenis) {
-            if (targetJenis === 'Reguler' && rowJenis !== 'reguler') return false;
-            if (targetJenis === 'Khusus' && rowJenis !== 'khusus') return false;
+            if (targetJenis === 'Reguler' && rowJenis.includes('khusus')) return false;
+            if (targetJenis === 'Khusus' && !rowJenis.includes('khusus') && rowJenis !== 'khusus') return false;
           }
 
-          // 2. Check Jenjang Studi & Kelompok Kelas
-          if (activeJenjang || activeKelas) {
-            const rowJenjang = normalize(row.jenjang_studi || row.jenjang);
-            const rowKelas = normalize(row.kelompok_kelas || row.kelas);
-            const normJenjang = normalize(activeJenjang);
-            const normKelas = normalize(activeKelas);
-
-            let matchesJenjangOrKelas = false;
-
-            if (normJenjang) {
-              if (rowJenjang && (rowJenjang.includes(normJenjang) || normJenjang.includes(rowJenjang))) {
-                matchesJenjangOrKelas = true;
-              }
-              if (rowKelas && (rowKelas.includes(normJenjang) || normJenjang.includes(rowKelas))) {
-                matchesJenjangOrKelas = true;
-              }
-            }
-
-            if (!matchesJenjangOrKelas && normKelas && rowKelas) {
-              if (rowKelas.includes(normKelas) || normKelas.includes(rowKelas)) {
-                matchesJenjangOrKelas = true;
-              }
-            }
-
-            if ((normJenjang || normKelas) && (rowJenjang || rowKelas) && !matchesJenjangOrKelas) {
+          // 2. Check Cabang
+          if (activeCabang) {
+            const normCabang = normalize(activeCabang);
+            const rowCabang = normalize(row.cabang);
+            if (rowCabang && !rowCabang.includes(normCabang) && !normCabang.includes(rowCabang)) {
               return false;
             }
           }
 
-          // 3. Check Mata Pelajaran
+          // 3. Strict Check Kelompok Kelas & Jenjang Studi
+          const normActiveKelas = normalize(activeKelas);
+          const normActiveJenjang = normalize(activeJenjang);
+          const rowKelasRaw = normalize(row.kelompok_kelas || row.kelas || row.sekolah);
+          const rowJenjangRaw = normalize(row.jenjang_studi || row.jenjang);
+
+          if (normActiveKelas) {
+            // Student has a specific kelompok_kelas (e.g. "3 UTBK 2")
+            if (rowKelasRaw) {
+              const rowItems = rowKelasRaw.split(/[,;\/]+/).map(s => s.trim()).filter(Boolean);
+              const matchesClass = rowItems.some(item => {
+                if (item === normActiveKelas) return true;
+                if (item.includes(normActiveKelas) || normActiveKelas.includes(item)) {
+                  // Extract numbers to ensure class numbers match (e.g. "3 utbk 1" vs "3 utbk 2")
+                  const activeNums = normActiveKelas.match(/\d+/g) || [];
+                  const itemNums = item.match(/\d+/g) || [];
+                  if (activeNums.length > 0 && itemNums.length > 0) {
+                    const lastActive = activeNums[activeNums.length - 1];
+                    const lastItem = itemNums[itemNums.length - 1];
+                    if (activeNums.length === itemNums.length && lastActive !== lastItem) {
+                      return false;
+                    }
+                  }
+                  return true;
+                }
+                return false;
+              });
+
+              if (!matchesClass) {
+                return false; // Do not fall back to jenjang if kelompok_kelas is different!
+              }
+            } else if (rowJenjangRaw && normActiveJenjang) {
+              // If row does not specify a kelompok_kelas, fall back to checking jenjang_studi
+              if (rowJenjangRaw !== normActiveJenjang && !rowJenjangRaw.includes(normActiveJenjang) && !normActiveJenjang.includes(rowJenjangRaw)) {
+                return false;
+              }
+            }
+          } else if (normActiveJenjang) {
+            // Student has no kelompok_kelas, check jenjang_studi
+            if (rowJenjangRaw && rowJenjangRaw !== normActiveJenjang && !rowJenjangRaw.includes(normActiveJenjang) && !normActiveJenjang.includes(rowJenjangRaw)) {
+              return false;
+            }
+            if (rowKelasRaw && !rowKelasRaw.includes(normActiveJenjang) && !normActiveJenjang.includes(rowKelasRaw)) {
+              return false;
+            }
+          }
+
+          // 4. Check Mata Pelajaran yang dipilih
           const rowSubjectRaw = row.mata_pelajaran || row.mapel || row.subject || row.nama_mapel || row.pelajaran;
           const rowSubject = normalize(rowSubjectRaw);
 
@@ -992,6 +1019,7 @@ export default function App() {
 
           if (studentSubjects.length > 0) {
             const subjectMatch = studentSubjects.some(subj => {
+              if (!subj) return false;
               return rowSubject.includes(subj) || subj.includes(rowSubject);
             });
             if (!subjectMatch) return false;
@@ -1012,7 +1040,7 @@ export default function App() {
           const subjectName = String(row.mata_pelajaran || row.mapel || row.subject || row.nama_mapel || row.pelajaran || '').trim() || 'Mata Pelajaran';
           const teacherName = String(row.nama_pengajar || row.pengajar || row.tentor || row.guru || '').trim() || 'Pengajar';
 
-          let dayName = row.hari || 'Senin';
+          let dayName = row.hari || '';
           if (row.tanggal) {
             const date = parseDateSafe(row.tanggal);
             if (date) {
@@ -1043,7 +1071,7 @@ export default function App() {
           const time_start = waktuParts[0]?.trim() || '';
           const time_end = waktuParts[1]?.trim() || '';
           
-          let dayName = row.hari || 'Senin';
+          let dayName = row.hari || '';
           let status = 'Aktif';
           
           if (row.tanggal) {
@@ -1080,6 +1108,20 @@ export default function App() {
         // Only show schedule for this month and next month
         mappedRegSchedules = mappedRegSchedules.filter(item => isThisOrNextMonth(item.tanggal));
         mappedKhususSchedules = mappedKhususSchedules.filter(item => isThisOrNextMonth(item.tanggal));
+
+        // Deduplicate schedules with identical subject, time, teacher, day/date, and class
+        const dedupeList = <T extends { subject: string; time_start?: string; time_end?: string; teacher?: string; day?: string; tanggal?: string; kelas?: string }>(list: T[]): T[] => {
+          const seen = new Set<string>();
+          return list.filter(item => {
+            const key = `${item.subject}_${item.time_start || ''}_${item.time_end || ''}_${item.teacher || ''}_${item.day || ''}_${item.tanggal || ''}_${item.kelas || ''}`.toLowerCase().replace(/\s+/g, '');
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+          });
+        };
+
+        mappedRegSchedules = dedupeList(mappedRegSchedules);
+        mappedKhususSchedules = dedupeList(mappedKhususSchedules);
 
         setRegularSchedules(mappedRegSchedules);
         setAdditionalSchedules(mappedKhususSchedules);
@@ -1673,10 +1715,20 @@ export default function App() {
 
                     <div className="space-y-3">
                       {(() => {
-                        const todaySchedules = [
+                        const rawTodaySchedules = [
                           ...regularSchedules.filter(isScheduleForToday),
                           ...additionalSchedules.filter(isScheduleForToday)
                         ];
+
+                        // Deduplicate by subject, time_start, time_end, and teacher
+                        const todayMap = new Map<string, typeof rawTodaySchedules[0]>();
+                        rawTodaySchedules.forEach(item => {
+                          const key = `${item.subject}_${item.time_start || ''}_${item.time_end || ''}_${item.teacher || ''}`.toLowerCase().replace(/\s+/g, '');
+                          if (!todayMap.has(key)) {
+                            todayMap.set(key, item);
+                          }
+                        });
+                        const todaySchedules = Array.from(todayMap.values());
 
                         if (todaySchedules.length === 0) {
                           return (

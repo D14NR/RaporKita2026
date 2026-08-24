@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { Clock, AlertTriangle, CheckCircle, FileText, ChevronRight, Volume2, VolumeX, Sparkles, X } from 'lucide-react';
+import { Clock, AlertTriangle, CheckCircle, FileText, ChevronRight, Volume2, VolumeX, Sparkles, X, Bell, BellRing } from 'lucide-react';
 import { RegularSchedule, AdditionalSchedule, DataSiswa } from '../types';
-import { getScheduleTimeStatus, ScheduleTimeStatus } from '../lib/dateUtils';
+import { getScheduleTimeStatus, ScheduleTimeStatus, getTodayIndoString } from '../lib/dateUtils';
+import { baseApiUrl } from '../lib/d1';
+import { requestNotificationPermission } from '../lib/pushNotifications';
 
 interface ActiveScheduleAlertProps {
   regularSchedules: RegularSchedule[];
@@ -28,6 +30,9 @@ export const ActiveScheduleAlert: React.FC<ActiveScheduleAlertProps> = ({
   const [isDismissed, setIsDismissed] = useState<boolean>(false);
   const [soundEnabled, setSoundEnabled] = useState<boolean>(true);
   const [alertTriggered, setAlertTriggered] = useState<boolean>(false);
+  const [notifPermission, setNotifPermission] = useState<NotificationPermission>(
+    typeof window !== 'undefined' && 'Notification' in window ? Notification.permission : 'default'
+  );
 
   // Live timer tick every 1 second
   useEffect(() => {
@@ -37,11 +42,19 @@ export const ActiveScheduleAlert: React.FC<ActiveScheduleAlertProps> = ({
     return () => clearInterval(timer);
   }, []);
 
-  // Combine schedules
-  const allSchedules = [
+  // Combine & deduplicate schedules
+  const rawAllSchedules = [
     ...regularSchedules.map(s => ({ ...s, isKhusus: false })),
     ...additionalSchedules.map(s => ({ ...s, isKhusus: true }))
   ];
+
+  const seenMapKey = new Set<string>();
+  const allSchedules = rawAllSchedules.filter(item => {
+    const key = `${item.subject}_${item.time_start || ''}_${item.time_end || ''}_${item.teacher || ''}`.toLowerCase().replace(/\s+/g, '');
+    if (seenMapKey.has(key)) return false;
+    seenMapKey.add(key);
+    return true;
+  });
 
   // Calculate time status for each schedule
   const activeSchedules: { item: typeof allSchedules[0]; status: ScheduleTimeStatus }[] = [];
@@ -58,7 +71,71 @@ export const ActiveScheduleAlert: React.FC<ActiveScheduleAlertProps> = ({
     }
   });
 
-  // Sound chime trigger when active schedule detected
+  // Handle browser push & database notification creation for 30 min reminders
+  useEffect(() => {
+    if (!currentStudent?.nis || upcomingSchedules.length === 0) return;
+
+    upcomingSchedules.forEach(({ item, status }) => {
+      if (status.minutesUntilStart <= 30 && status.minutesUntilStart > 0) {
+        const todayDate = getTodayIndoString(false);
+        const dedupeKey = `notif_30m_${currentStudent.nis}_${item.subject}_${todayDate}_${item.time_start}`;
+
+        if (!localStorage.getItem(dedupeKey)) {
+          localStorage.setItem(dedupeKey, '1');
+
+          // 1. Play sound chime
+          if (soundEnabled) {
+            try {
+              const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+              const osc = audioCtx.createOscillator();
+              const gain = audioCtx.createGain();
+              osc.type = 'triangle';
+              osc.frequency.setValueAtTime(440, audioCtx.currentTime); // A4
+              osc.frequency.exponentialRampToValueAtTime(659.25, audioCtx.currentTime + 0.3); // E5
+              gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
+              gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.6);
+              osc.connect(gain);
+              gain.connect(audioCtx.destination);
+              osc.start();
+              osc.stop(audioCtx.currentTime + 0.6);
+            } catch (e) {
+              // Audio context blocked
+            }
+          }
+
+          // 2. Trigger browser Desktop Notification if granted
+          if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+            try {
+              new Notification(`⏰ Pengingat KBM 30 Menit - ${item.subject}`, {
+                body: `KBM ${item.subject} akan dimulai dalam ${status.minutesUntilStart} menit (${item.time_start} WIB) bersama ${item.teacher || 'Pengajar'}. Persiapkan diri Anda!`,
+                icon: '/pwa-192x192.png'
+              });
+            } catch (err) {
+              console.warn('Browser notification trigger:', err);
+            }
+          }
+
+          // 3. Save notification record into riwayat_notifikasi_siswa database
+          fetch(`${baseApiUrl}/db/riwayat_notifikasi_siswa`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+            body: JSON.stringify({
+              id: `NOTIF-30M-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+              nis: currentStudent.nis,
+              nama_siswa: currentStudent.nama_lengkap || 'Siswa',
+              siswa_id: currentStudent.id,
+              tipe_notifikasi: 'Jadwal',
+              pesan: `⏰ PENGINGAT 30 MENIT: KBM ${item.subject} (${item.isKhusus ? 'Kelas Khusus' : 'Reguler'}) akan dimulai pukul ${item.time_start} WIB bersama ${item.teacher || 'Pengajar'}.`,
+              status_baca: 0,
+              created_at: new Date().toISOString()
+            })
+          }).catch(err => console.warn('Gagal menyimpan notifikasi 30M ke database:', err));
+        }
+      }
+    });
+  }, [upcomingSchedules.length, currentStudent?.nis, soundEnabled]);
+
+  // Sound chime trigger when ACTIVE schedule detected
   useEffect(() => {
     if (activeSchedules.length > 0 && !alertTriggered && soundEnabled) {
       setAlertTriggered(true);
@@ -76,12 +153,17 @@ export const ActiveScheduleAlert: React.FC<ActiveScheduleAlertProps> = ({
         osc.start();
         osc.stop(audioCtx.currentTime + 0.5);
       } catch (e) {
-        // AudioContext disabled or blocked by browser policy
+        // AudioContext disabled
       }
     } else if (activeSchedules.length === 0) {
       setAlertTriggered(false);
     }
   }, [activeSchedules.length, alertTriggered, soundEnabled]);
+
+  const handleEnableNotification = async () => {
+    const res = await requestNotificationPermission(currentStudent?.nis, currentStudent);
+    setNotifPermission(res.permission);
+  };
 
   // If user dismissed, show compact status
   if (isDismissed) {
@@ -89,7 +171,7 @@ export const ActiveScheduleAlert: React.FC<ActiveScheduleAlertProps> = ({
       <div className="flex items-center justify-between p-3 rounded-2xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-600 dark:text-slate-300">
         <div className="flex items-center gap-2">
           <Clock className="h-4 w-4 text-sky-600 dark:text-sky-400" />
-          <span>Alert Jadwal Di-minimize ({activeSchedules.length} KBM Aktif)</span>
+          <span>Alert Jadwal Di-minimize ({activeSchedules.length} Aktif, {upcomingSchedules.length} Pengingat)</span>
         </div>
         <button
           onClick={() => setIsDismissed(false)}
@@ -113,18 +195,31 @@ export const ActiveScheduleAlert: React.FC<ActiveScheduleAlertProps> = ({
             </span>
           </div>
           <span className="text-slate-400 text-[11px] hidden sm:inline">
-            Status Waktu Realtime Dashboard
+            Pengingat Jadwal KBM Realtime
           </span>
         </div>
 
-        <button
-          onClick={() => setSoundEnabled(!soundEnabled)}
-          className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 transition cursor-pointer flex items-center gap-1.5 text-[11px]"
-          title={soundEnabled ? "Audio Alert Aktif" : "Audio Alert Muted"}
-        >
-          {soundEnabled ? <Volume2 className="h-3.5 w-3.5 text-emerald-400" /> : <VolumeX className="h-3.5 w-3.5 text-slate-500" />}
-          <span className="hidden sm:inline text-slate-400">{soundEnabled ? 'Suara Aktif' : 'Mute'}</span>
-        </button>
+        <div className="flex items-center gap-2">
+          {notifPermission !== 'granted' && (
+            <button
+              onClick={handleEnableNotification}
+              className="bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 text-[10px] font-extrabold px-2.5 py-1 rounded-xl border border-amber-500/40 transition cursor-pointer flex items-center gap-1"
+              title="Aktifkan Notifikasi Browser"
+            >
+              <BellRing className="h-3 w-3 text-amber-400 animate-bounce" />
+              <span className="hidden md:inline">Aktifkan Notifikasi Web</span>
+            </button>
+          )}
+
+          <button
+            onClick={() => setSoundEnabled(!soundEnabled)}
+            className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 transition cursor-pointer flex items-center gap-1.5 text-[11px]"
+            title={soundEnabled ? "Audio Alert Aktif" : "Audio Alert Muted"}
+          >
+            {soundEnabled ? <Volume2 className="h-3.5 w-3.5 text-emerald-400" /> : <VolumeX className="h-3.5 w-3.5 text-slate-500" />}
+            <span className="hidden sm:inline text-slate-400">{soundEnabled ? 'Suara' : 'Mute'}</span>
+          </button>
+        </div>
       </div>
 
       {/* ACTIVE SCHEDULE BANNERS */}
@@ -250,29 +345,64 @@ export const ActiveScheduleAlert: React.FC<ActiveScheduleAlertProps> = ({
             </div>
           );
         })
-      ) : upcomingSchedules.length > 0 ? (
+      ) : null}
+
+      {/* 30-MINUTE UPCOMING KBM REMINDERS */}
+      {upcomingSchedules.length > 0 && (
         upcomingSchedules.map(({ item, status }, idx) => (
           <div
             key={`upcoming-${idx}`}
-            className="rounded-2xl bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 text-white p-4 shadow-md border border-amber-300/30 animate-in fade-in slide-in-from-top-2"
+            className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-amber-600 via-orange-600 to-amber-700 text-white p-5 shadow-lg shadow-orange-500/10 border border-amber-300/40 animate-in fade-in slide-in-from-top-2 duration-300"
           >
-            <div className="flex items-center justify-between gap-3 flex-wrap">
-              <div className="flex items-center gap-3">
-                <div className="bg-white/20 p-2.5 rounded-xl shrink-0">
-                  <AlertTriangle className="h-5 w-5 text-amber-100" />
-                </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-[10px] font-black bg-black/20 text-amber-100 px-2 py-0.5 rounded-full uppercase tracking-wider">
-                      Mulai Dalam {status.minutesUntilStart} Menit
+            <div className="flex items-start justify-between gap-4 relative z-10">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 mb-2 flex-wrap">
+                  <span className="inline-flex items-center gap-1.5 bg-black/25 backdrop-blur-md text-amber-100 text-[10px] font-black px-3 py-1 rounded-full border border-amber-300/30 uppercase tracking-wider">
+                    <Bell className="h-3 w-3 text-amber-300 animate-bounce" />
+                    PENGINGAT 30 MENIT • KBM SEGERA DIMULAI
+                  </span>
+                  {item.isKhusus && (
+                    <span className="bg-indigo-900/40 text-indigo-100 text-[10px] font-bold px-2 py-0.5 rounded-full border border-indigo-300/30">
+                      Kelas Khusus
                     </span>
-                    <span className="text-xs font-extrabold text-white">{item.time_start} WIB</span>
+                  )}
+                </div>
+
+                <h3 className="text-lg font-black text-white leading-tight">
+                  {item.subject}
+                </h3>
+                <p className="text-xs text-amber-100/90 font-medium mt-1">
+                  Bersama Pengajar: <strong className="text-white">{item.teacher || 'Tim Akademik'}</strong>
+                  {item.kelas && ` • Ruang/Kelas: ${item.kelas}`}
+                </p>
+
+                <div className="mt-3 flex items-center gap-2.5 text-xs flex-wrap">
+                  <div className="bg-black/30 backdrop-blur-sm px-3 py-1.5 rounded-xl border border-white/10 font-extrabold text-amber-200 flex items-center gap-1.5">
+                    <Clock className="h-3.5 w-3.5 text-amber-300" />
+                    <span>Mulai Dalam {status.minutesUntilStart} Menit ({item.time_start} WIB)</span>
                   </div>
-                  <h4 className="text-sm font-black text-white mt-0.5">
-                    {item.subject} <span className="font-normal text-amber-100">({item.teacher})</span>
-                  </h4>
+
+                  <p className="text-[11px] text-amber-100/80 font-medium hidden sm:inline">
+                    Persiapkan perlengkapan belajar & koneksi internet Anda.
+                  </p>
                 </div>
               </div>
+
+              <div className="flex items-center gap-1 shrink-0">
+                <button
+                  onClick={() => setIsDismissed(true)}
+                  className="p-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white/80 hover:text-white transition cursor-pointer"
+                  title="Tutup Alert"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+
+            <div className="mt-4 pt-3 border-t border-white/15 flex items-center justify-between gap-2 flex-wrap">
+              <p className="text-[11px] text-amber-100/80 italic">
+                *Notifikasi di atas juga telah dikirimkan ke riwayat notifikasi Anda.
+              </p>
 
               <div className="flex items-center gap-2">
                 <button
@@ -283,22 +413,24 @@ export const ActiveScheduleAlert: React.FC<ActiveScheduleAlertProps> = ({
                     teacher: item.teacher,
                     kelas: item.kelas || currentStudent?.kelompok_kelas
                   })}
-                  className="bg-white text-slate-900 hover:bg-amber-50 font-black text-xs px-3 py-1.5 rounded-xl transition cursor-pointer"
+                  className="bg-white text-slate-900 hover:bg-amber-50 font-black text-xs px-3.5 py-2 rounded-xl transition cursor-pointer shadow-xs"
                 >
-                  Izin / Sakit
+                  Formulir Izin/Sakit
                 </button>
                 <button
                   onClick={() => onNavigateTab(item.isKhusus ? 'kbm-tambahan' : 'kbm-reguler')}
-                  className="bg-black/20 hover:bg-black/30 text-white font-bold text-xs px-3 py-1.5 rounded-xl transition cursor-pointer"
+                  className="bg-black/30 hover:bg-black/40 text-white font-bold text-xs px-3.5 py-2 rounded-xl transition cursor-pointer border border-white/20"
                 >
-                  Lihat Jadwal
+                  Lihat Detail
                 </button>
               </div>
             </div>
           </div>
         ))
-      ) : (
-        /* No active KBM schedule right now */
+      )}
+
+      {/* NO ACTIVE OR UPCOMING SCHEDULES */}
+      {activeSchedules.length === 0 && upcomingSchedules.length === 0 && (
         <div className="bg-white dark:bg-slate-800/80 rounded-2xl p-3.5 border border-slate-200/80 dark:border-slate-700/80 shadow-xs flex items-center justify-between gap-3 text-xs text-slate-600 dark:text-slate-300">
           <div className="flex items-center gap-2.5">
             <div className="bg-sky-50 dark:bg-sky-950/60 p-2 rounded-xl text-sky-600 dark:text-sky-400 shrink-0">
@@ -306,10 +438,10 @@ export const ActiveScheduleAlert: React.FC<ActiveScheduleAlertProps> = ({
             </div>
             <div>
               <p className="font-bold text-slate-800 dark:text-slate-200">
-                Tidak ada KBM yang berlangsung saat ini
+                Tidak ada KBM aktif atau jadwal dalam 30 menit ke depan
               </p>
               <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                Sistem otomatis memberikan alert saat jam KBM dimulai.
+                Sistem akan memberikan pengingat otomatis 30 menit sebelum KBM hari ini dimulai.
               </p>
             </div>
           </div>

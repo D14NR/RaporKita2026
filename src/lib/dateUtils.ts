@@ -160,6 +160,7 @@ export function isScheduleForToday(item: { tanggal?: string | null; day?: string
   const currentMonth = now.getMonth(); // 0..11
   const currentDate = now.getDate();
   const todayYMD = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-${String(currentDate).padStart(2, '0')}`;
+  const todayDayName = DAYS_INDO[now.getDay()];
 
   const cleanTanggal = item.tanggal ? String(item.tanggal).trim() : '';
 
@@ -169,29 +170,26 @@ export function isScheduleForToday(item: { tanggal?: string | null; day?: string
       return true;
     }
 
-    // 2. Parsed Date object match
+    // 2. Parsed Date object check
     const parsed = parseDateSafe(cleanTanggal);
     if (parsed) {
-      if (
+      // If it's a valid date, it MUST match today's YYYY-MM-DD to be for today.
+      return (
         parsed.getFullYear() === currentYear &&
         parsed.getMonth() === currentMonth &&
         parsed.getDate() === currentDate
-      ) {
-        return true;
-      }
+      );
     } else {
       // 3. String might be Indonesian day name e.g. "Senin"
-      const todayDayName = DAYS_INDO[now.getDay()];
       if (cleanTanggal.toLowerCase() === todayDayName.toLowerCase()) {
         return true;
       }
     }
   }
 
-  // 4. Day property match e.g. item.day === "Senin"
+  // 4. Day property match e.g. item.day === "Senin" (only if no specific invalid/different date was provided)
   if (item.day) {
     const cleanDay = String(item.day).trim();
-    const todayDayName = DAYS_INDO[now.getDay()];
     if (cleanDay.toLowerCase() === todayDayName.toLowerCase()) {
       return true;
     }
@@ -254,7 +252,7 @@ export function getScheduleTimeStatus(
   if (currentMin >= startMin && currentMin < endMin) {
     result.isActiveNow = true;
     result.minutesRemaining = endMin - currentMin;
-  } else if (currentMin < startMin && (startMin - currentMin) <= 45) {
+  } else if (currentMin < startMin && (startMin - currentMin) <= 30) {
     result.isUpcomingSoon = true;
     result.minutesUntilStart = startMin - currentMin;
   }
