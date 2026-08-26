@@ -65,8 +65,14 @@ import { formatTanggalIndo, isThisOrNextMonth, isScheduleForToday, isScheduleFin
 import { SettingsModal } from './components/SettingsModal';
 import { NotificationModal } from './components/NotificationModal';
 import { UjiMateriView } from './components/UjiMateriView';
+import { NilaiView } from './components/NilaiView';
+import { PerkembanganView } from './components/PerkembanganView';
+import { KbmRegulerView } from './components/KbmRegulerView';
+import { KbmKhususView } from './components/KbmKhususView';
+import { LuarKbmView } from './components/LuarKbmView';
 import { UpdateCheckerModal } from './components/UpdateCheckerModal';
 import { ActiveScheduleAlert } from './components/ActiveScheduleAlert';
+import { PresensiView } from './components/PresensiView';
 import { requestNotificationPermission } from './lib/pushNotifications';
 import { formatScore, roundScore } from './lib/formatUtils';
 
@@ -2137,530 +2143,47 @@ export default function App() {
           )}
 
           {/* TAB 2: JADWAL KBM REGULER */}
-          {activeTab === 'kbm-reguler' && (() => {
-            // Group by tanggal or day (filtered for current and next month only)
-            const groupedSchedules: { [dateStr: string]: RegularSchedule[] } = {};
-            regularSchedules
-              .filter(item => isThisOrNextMonth(item.tanggal))
-              .forEach(item => {
-                const dateKey = item.tanggal || item.day || 'No Date';
-                if (!groupedSchedules[dateKey]) {
-                  groupedSchedules[dateKey] = [];
-                }
-                groupedSchedules[dateKey].push(item);
-              });
-            
-            // Sort dates: Today first, then Future (ascending), then Past (descending)
-            const sortedDateKeys = Object.keys(groupedSchedules).sort((a, b) => {
-              if (a === 'No Date') return 1;
-              if (b === 'No Date') return -1;
-              
-              const dateA = new Date(a);
-              const dateB = new Date(b);
-              
-              if (isNaN(dateA.getTime()) || isNaN(dateB.getTime())) return 0;
-              
-              const timeA = dateA.getTime();
-              const timeB = dateB.getTime();
-              
-              const today = new Date();
-              const todayTime = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
-              
-              const getDayType = (time: number) => {
-                const date = new Date(time);
-                const itemTime = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
-                if (itemTime === todayTime) return 0; // Today
-                if (itemTime > todayTime) return 1; // Future
-                return 2; // Past
-              };
-              
-              const typeA = getDayType(timeA);
-              const typeB = getDayType(timeB);
-              
-              if (typeA !== typeB) {
-                return typeA - typeB;
-              }
-              
-              // If both are past, sort newest past first (descending)
-              if (typeA === 2) {
-                 return timeB - timeA;
-              }
-              // If both are future or today, sort nearest future first (ascending)
-              return timeA - timeB;
-            });
-
-            const formatKbmDate = (dateStr: string) => {
-              if (!dateStr || dateStr === 'No Date') return 'Jadwal';
-              return formatTanggalIndo(dateStr, { withDayName: true, uppercase: true });
-            };
-
-            const getKbmDateBadge = (dateStr: string) => {
-              if (!dateStr || dateStr === 'No Date') return null;
-              const itemDate = new Date(dateStr);
-              if (isNaN(itemDate.getTime())) return null;
-              
-              const today = new Date();
-              const itemTime = new Date(itemDate.getFullYear(), itemDate.getMonth(), itemDate.getDate()).getTime();
-              const todayTime = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
-              
-              if (itemTime === todayTime) {
-                return (
-                  <span className="bg-red-600 text-white text-[9px] font-black tracking-widest px-2.5 py-1 rounded-full uppercase">
-                    HARI INI
-                  </span>
-                );
-              }
-              
-              if (itemTime > todayTime) {
-                return (
-                  <span className="bg-[#D1FAE5] text-[#065F46] text-[9px] font-black tracking-widest px-2.5 py-1 rounded-full uppercase">
-                    AKAN DATANG
-                  </span>
-                );
-              }
-              
-              return (
-                <span className="bg-slate-100 text-slate-500 dark:text-slate-400 text-[9px] font-black tracking-widest px-2.5 py-1 rounded-full uppercase">
-                  SELESAI
-                </span>
-              );
-            };
-
-            return (
-              <div id="view-kbm-reguler" className="space-y-6">
-                <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs p-4 sm:p-6">
-                  {/* BRANDED HEADER LIKE SCREENSHOT */}
-                  <div className="flex justify-between items-start border-b border-slate-100 pb-5 mb-6">
-                    <div>
-                      <span className="text-[11px] font-extrabold text-slate-400 tracking-widest uppercase block mb-1">CABANG</span>
-                      <h3 className="text-xl font-black text-slate-800 dark:text-slate-200 leading-none">{(selectedStudentData || currentStudent)?.cabang || 'Semarang 2'}</h3>
-                    </div>
-                    <div className="text-right">
-                      <span className="text-[11px] font-extrabold text-slate-400 tracking-widest uppercase block mb-1 text-right">KELOMPOK KELAS</span>
-                      <h3 className="text-xl font-black text-red-600 leading-none">{(selectedStudentData || currentStudent)?.kelompok_kelas || '2 IPS C'}</h3>
-                    </div>
-                  </div>
-
-                  {/* TIPS / INFORMATION BOX */}
-                  <div className="bg-blue-50 border border-blue-200 rounded-2xl p-4 mb-6 flex items-start gap-3">
-                    <div className="text-blue-600 mt-0.5 shrink-0">
-                      <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                        <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
-                      </svg>
-                    </div>
-                    <div className="flex-1">
-                      <p className="text-xs font-bold text-blue-800">💡 Catatan Penting</p>
-                      <p className="text-xs text-blue-700 mt-1">Pastikan Mata Pelajaran di profil sudah di isi, untuk menampilkan jadwal reguler.</p>
-                    </div>
-                  </div>
-
-                  {isKbmLoading ? (
-                    <div className="flex flex-col items-center justify-center py-20 bg-slate-50 rounded-2xl border border-slate-100/50">
-                      <div className="w-8 h-8 border-3 border-sky-600 border-t-transparent rounded-full animate-spin"></div>
-                      <p className="text-xs font-extrabold text-slate-400 mt-3">Memuat Jadwal KBM...</p>
-                    </div>
-                  ) : sortedDateKeys.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center py-16 bg-slate-50/50 border border-slate-100 rounded-2xl text-center p-6">
-                      <BookOpen className="h-10 w-10 text-slate-300 mb-2" />
-                      <h4 className="text-sm font-bold text-slate-700 dark:text-slate-300">Tidak Ada Jadwal KBM</h4>
-                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-sm">Jadwal tidak ditemukan untuk Cabang, Kelompok Kelas, dan Mata Pelajaran di profil siswa saat ini.</p>
-                    </div>
-                  ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 pt-2">
-                      {sortedDateKeys.map((dateKey) => {
-                        const sForDay = groupedSchedules[dateKey] || [];
-                        return (
-                          <div key={dateKey} className="bg-slate-50/30 dark:bg-slate-800/90 border border-slate-200/60 dark:border-slate-700/80 rounded-3xl p-5 flex flex-col shadow-2xs hover:shadow-xs transition duration-200">
-                            <div className="flex items-center justify-between mb-5 pb-2 border-b border-slate-100/80 dark:border-slate-700/80">
-                              <span className="text-[11px] font-black text-blue-600 dark:!text-white tracking-wider font-bold">
-                                {formatKbmDate(dateKey)}
-                              </span>
-                              {getKbmDateBadge(dateKey)}
-                            </div>
-                            <div className="space-y-3">
-                              {sForDay.map((item, idx) => (
-                                <div key={idx} className="bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 p-4 rounded-2xl flex flex-col gap-3 shadow-3xs hover:shadow-2xs transition duration-150">
-                                  <div className="flex items-center justify-between">
-                                    <div className="bg-slate-100/80 dark:bg-slate-700 text-slate-700 dark:text-slate-100 text-[10px] font-black px-3 py-1.5 rounded-full tracking-wider uppercase border border-slate-200/60 dark:border-slate-600">
-                                      {item.kelas || currentStudent?.kelompok_kelas || 'KELAS'}
-                                    </div>
-                                    <span className="text-[11px] text-slate-400 font-bold">
-                                      {item.time_start} - {item.time_end}
-                                    </span>
-                                  </div>
-                                  <h5 className="text-[13px] font-black text-slate-800 dark:text-slate-200 leading-snug uppercase break-words">
-                                    {item.subject}
-                                  </h5>
-                                  <div className="flex items-center justify-end pt-2.5 border-t border-slate-100 dark:border-slate-700 mt-1">
-                                    {(() => {
-                                      const isFinished = isScheduleFinished({
-                                        ...item,
-                                        tanggal: item.tanggal || (dateKey !== 'No Date' ? dateKey : undefined)
-                                      });
-                                      if (isFinished) {
-                                        return (
-                                          <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 bg-slate-100 dark:bg-slate-700/50 px-2.5 py-1 rounded-lg flex items-center gap-1">
-                                            <CheckCircle className="h-3 w-3 text-slate-400" />
-                                            KBM Selesai
-                                          </span>
-                                        );
-                                      }
-                                      return (
-                                        <button
-                                          onClick={() => handleOpenLeaveModal({
-                                            subject: item.subject,
-                                            date: item.tanggal || (dateKey !== 'No Date' ? dateKey : undefined),
-                                            time: `${item.time_start} - ${item.time_end}`,
-                                            teacher: item.teacher,
-                                            kelas: item.kelas || currentStudent?.kelompok_kelas
-                                          })}
-                                          className="text-[10px] font-extrabold text-amber-700 hover:text-amber-800 bg-amber-50 hover:bg-amber-100 px-2.5 py-1 rounded-lg border border-amber-200/80 transition flex items-center gap-1 shrink-0 cursor-pointer"
-                                        >
-                                          <FileText className="h-3 w-3 text-amber-600" />
-                                          Form Izin/Sakit
-                                        </button>
-                                      );
-                                    })()}
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              </div>
-            );
-          })()}
+          {activeTab === 'kbm-reguler' && (
+            <KbmRegulerView
+              currentStudent={currentStudent}
+              selectedStudentData={selectedStudentData}
+              regularSchedules={regularSchedules}
+              isKbmLoading={isKbmLoading}
+              isThisOrNextMonth={isThisOrNextMonth}
+              isScheduleFinished={isScheduleFinished}
+              handleOpenLeaveModal={handleOpenLeaveModal}
+            />
+          )}
 
           {/* TAB 3: JADWAL KBM TAMBAHAN */}
           {activeTab === 'kbm-tambahan' && (
-            <div id="view-kbm-tambahan" className="space-y-6">
-              <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs p-4 sm:p-6">
-                {/* BRANDED HEADER */}
-                <div className="grid grid-cols-3 gap-4 border-b border-slate-100 pb-5 mb-6">
-                  <div>
-                    <span className="text-[11px] font-extrabold text-slate-400 tracking-widest uppercase block mb-1">CABANG</span>
-                    <h3 className="text-sm font-black text-slate-800 dark:text-slate-200 leading-tight truncate">{(selectedStudentData || currentStudent)?.cabang || '-'}</h3>
-                  </div>
-                  <div>
-                    <span className="text-[11px] font-extrabold text-slate-400 tracking-widest uppercase block mb-1">SEKOLAH</span>
-                    <h3 className="text-sm font-black text-slate-800 dark:text-slate-200 leading-tight truncate">{(selectedStudentData || currentStudent)?.asal_sekolah || '-'}</h3>
-                  </div>
-                  <div className="text-right">
-                    <span className="text-[11px] font-extrabold text-slate-400 tracking-widest uppercase block mb-1 text-right">JENJANG</span>
-                    <h3 className="text-sm font-black text-indigo-600 leading-tight truncate">{(selectedStudentData || currentStudent)?.jenjang_studi || '-'}</h3>
-                  </div>
-                </div>
-
-                <div className="flex items-center justify-between border-b border-slate-100 pb-4 mb-6">
-                  <div>
-                    <h3 className="text-base font-bold text-slate-900 dark:text-slate-100">Jadwal KBM Khusus</h3>
-                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Kelas bimbingan diluar jam KBM, pembinaan khusus, dan persiapan Tes</p>
-                  </div>
-                  <span className="bg-indigo-50 text-indigo-700 text-xs font-bold px-3 py-1.5 rounded-full border border-indigo-100 flex items-center gap-1">
-                    <Clock className="h-4 w-4" />
-                    Opsional/Khusus
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {additionalSchedules.filter(item => isThisOrNextMonth(item.tanggal)).map((item, idx) => (
-                    <div key={idx} className="bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700 rounded-2xl p-4 flex items-start gap-4">
-                      <div className="bg-indigo-100/50 text-indigo-700 p-3 rounded-2xl shrink-0">
-                        <GraduationCap className="h-6 w-6" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center justify-between gap-2 flex-wrap">
-                          <span className="bg-indigo-50 text-indigo-800 text-[10px] font-extrabold px-2.5 py-0.5 rounded-full border border-indigo-100">
-                            Hari {item.day}
-                          </span>
-                          <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-md ${
-                            item.status === 'Aktif' ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-200 text-slate-600 dark:text-slate-300'
-                          }`}>
-                            {item.status}
-                          </span>
-                        </div>
-                        <h4 className="text-sm font-bold text-slate-800 dark:text-slate-200 mt-2">{item.subject}</h4>
-                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Pembina: {item.teacher}</p>
-                        <p className="text-xs text-slate-500 dark:text-slate-400">Kelas: {item.kelas || '-'}</p>
-                        <p className="text-xs text-slate-500 dark:text-slate-400">Tanggal: {item.tanggal ? formatTanggalIndo(item.tanggal, { withDayName: true }) : '-'}</p>
-                        
-                        <div className="mt-3 pt-3 border-t border-slate-200/60 dark:border-slate-700/60 flex items-center justify-between gap-2">
-                          <div className="flex items-center text-xs text-slate-500 dark:text-slate-400 font-bold">
-                            <Clock className="h-4 w-4 text-sky-600 mr-1.5 shrink-0" />
-                            {item.time_start} - {item.time_end} WIB
-                          </div>
-                          {(() => {
-                            const isFinished = isScheduleFinished(item);
-                            if (isFinished) {
-                              return (
-                                <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 bg-slate-100 dark:bg-slate-700/50 px-2.5 py-1 rounded-lg flex items-center gap-1">
-                                  <CheckCircle className="h-3 w-3 text-slate-400" />
-                                  KBM Selesai
-                                </span>
-                              );
-                            }
-                            return (
-                              <button
-                                onClick={() => handleOpenLeaveModal({
-                                  subject: item.subject,
-                                  date: item.tanggal,
-                                  time: `${item.time_start} - ${item.time_end}`,
-                                  teacher: item.teacher,
-                                  kelas: item.kelas
-                                })}
-                                className="text-[10px] font-extrabold text-amber-700 hover:text-amber-800 bg-amber-50 hover:bg-amber-100 px-2.5 py-1 rounded-lg border border-amber-200/80 transition flex items-center gap-1 shrink-0 cursor-pointer"
-                              >
-                                <FileText className="h-3 w-3 text-amber-600" />
-                                Form Izin/Sakit
-                              </button>
-                            );
-                          })()}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                  {additionalSchedules.filter(item => isThisOrNextMonth(item.tanggal)).length === 0 && (
-                    <div className="col-span-full py-12 text-center">
-                      <AlertCircle className="h-10 w-10 text-slate-300 mx-auto mb-2" />
-                      <p className="text-sm text-slate-500 dark:text-slate-400">Siswa tidak memiliki jadwal kelas tambahan atau ekstrakurikuler terdaftar untuk bulan ini dan bulan depan.</p>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
+            <KbmKhususView
+              currentStudent={currentStudent}
+              selectedStudentData={selectedStudentData}
+              additionalSchedules={additionalSchedules}
+              isThisOrNextMonth={isThisOrNextMonth}
+              isScheduleFinished={isScheduleFinished}
+              handleOpenLeaveModal={handleOpenLeaveModal}
+            />
           )}
 
           {/* TAB 4: RIWAYAT PRESENSI */}
           {activeTab === 'presensi' && (
-            <div id="view-presensi" className="space-y-6">
-              
-              {/* Presensi stats widgets */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                <div className="bg-emerald-50/50 p-5 rounded-3xl border border-emerald-100 shadow-sm flex flex-col justify-between transition-all hover:shadow-md">
-                  <div className="flex justify-between items-start mb-4">
-                    <span className="text-[11px] font-black text-emerald-600/80 uppercase tracking-widest">Hadir</span>
-                    <div className="p-2.5 bg-emerald-100/80 rounded-xl">
-                      <CheckCircle className="h-4 w-4 text-emerald-600" />
-                    </div>
-                  </div>
-                  <div className="flex items-baseline gap-1.5">
-                    <span className="text-3xl font-black text-emerald-700 tracking-tight">{attendanceStats.hadir}</span>
-                    <span className="text-xs font-bold text-emerald-600/70">hari</span>
-                  </div>
-                </div>
-                <div className="bg-blue-50/50 p-5 rounded-3xl border border-blue-100 shadow-sm flex flex-col justify-between transition-all hover:shadow-md">
-                  <div className="flex justify-between items-start mb-4">
-                    <span className="text-[11px] font-black text-blue-600/80 uppercase tracking-widest">Sakit</span>
-                    <div className="p-2.5 bg-blue-100/80 rounded-xl">
-                      <HeartHandshake className="h-4 w-4 text-blue-600" />
-                    </div>
-                  </div>
-                  <div className="flex items-baseline gap-1.5">
-                    <span className="text-3xl font-black text-blue-700 tracking-tight">{attendanceStats.sakit}</span>
-                    <span className="text-xs font-bold text-blue-600/70">hari</span>
-                  </div>
-                </div>
-                <div className="bg-amber-50/50 p-5 rounded-3xl border border-amber-100 shadow-sm flex flex-col justify-between transition-all hover:shadow-md">
-                  <div className="flex justify-between items-start mb-4">
-                    <span className="text-[11px] font-black text-amber-600/80 uppercase tracking-widest">Izin</span>
-                    <div className="p-2.5 bg-amber-100/80 rounded-xl">
-                      <ClipboardList className="h-4 w-4 text-amber-600" />
-                    </div>
-                  </div>
-                  <div className="flex items-baseline gap-1.5">
-                    <span className="text-3xl font-black text-amber-700 tracking-tight">{attendanceStats.izin}</span>
-                    <span className="text-xs font-bold text-amber-600/70">hari</span>
-                  </div>
-                </div>
-                <div className="bg-rose-50/50 p-5 rounded-3xl border border-rose-100 shadow-sm flex flex-col justify-between transition-all hover:shadow-md">
-                  <div className="flex justify-between items-start mb-4">
-                    <span className="text-[11px] font-black text-rose-600/80 uppercase tracking-widest">Alpa</span>
-                    <div className="p-2.5 bg-rose-100/80 rounded-xl">
-                      <AlertCircle className="h-4 w-4 text-rose-600" />
-                    </div>
-                  </div>
-                  <div className="flex items-baseline gap-1.5">
-                    <span className="text-3xl font-black text-rose-700 tracking-tight">{attendanceStats.alpa}</span>
-                    <span className="text-xs font-bold text-rose-600/70">hari</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Records Card */}
-              <div className="bg-white rounded-3xl border border-slate-200/70 shadow-sm overflow-hidden">
-                <div className="p-5 sm:p-7 border-b border-slate-100 bg-slate-50/30 flex flex-col sm:flex-row sm:items-center justify-between gap-5">
-                  <div>
-                    <h3 className="text-lg font-black text-slate-900 tracking-tight">Log Presensi Detail</h3>
-                    <p className="text-sm text-slate-500 mt-1.5 font-medium">Daftar kehadiran siswa di kelas secara real-time</p>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-3">
-                    {availableAttendanceMonths.length > 0 && (
-                      <div className="relative">
-                        <select
-                          value={attendanceMonthFilter}
-                          onChange={(e) => setAttendanceMonthFilter(e.target.value)}
-                          className="appearance-none text-xs font-bold border-2 border-slate-200 rounded-xl px-4 py-2.5 pr-9 bg-white text-slate-700 focus:outline-none focus:border-sky-500 focus:ring-4 focus:ring-sky-500/10 cursor-pointer transition-all hover:border-slate-300 w-full sm:w-auto"
-                        >
-                          <option value="all">Semua Bulan</option>
-                          {availableAttendanceMonths.map(month => (
-                            <option key={month.value} value={month.value}>{month.label}</option>
-                          ))}
-                        </select>
-                        <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-slate-400">
-                          <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path></svg>
-                        </div>
-                      </div>
-                    )}
-                    <button
-                      onClick={() => setShowChartPresensi(!showChartPresensi)}
-                      className={`text-xs font-bold px-5 py-2.5 rounded-xl transition-all duration-200 flex items-center gap-2 border-2 ${
-                        showChartPresensi 
-                          ? 'bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200' 
-                          : 'bg-sky-50 text-sky-700 border-sky-100 hover:bg-sky-100'
-                      }`}
-                    >
-                      {showChartPresensi ? 'Tutup Grafik' : 'Lihat Tren Grafik'}
-                    </button>
-                  </div>
-                </div>
-
-                {showChartPresensi && (
-                  <div className="p-6 bg-slate-50/50 border-b border-slate-100 animate-in slide-in-from-top-4 fade-in duration-300">
-                    <AttendancePieChart data={filteredAttendanceRecords} />
-                  </div>
-                )}
-
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-sm border-collapse">
-                    <thead>
-                      <tr className="bg-white border-b border-slate-100 text-slate-400 font-bold text-[11px] uppercase tracking-widest">
-                        <th className="py-5 px-6 font-bold">Tanggal</th>
-                        <th className="py-5 px-6 font-bold">Mata Pelajaran</th>
-                        <th className="py-5 px-6 font-bold text-center">Status</th>
-                        <th className="py-5 px-6 font-bold">Catatan Guru</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100/80 bg-white">
-                      {filteredAttendanceRecords.map((item, idx) => (
-                        <tr key={idx} className="hover:bg-slate-50/80 transition duration-200 group">
-                          <td className="py-4 px-6 font-bold text-slate-800 whitespace-nowrap">
-                            {formatTanggalIndo(item.date, { withDayName: true })}
-                          </td>
-                          <td className="py-4 px-6">
-                            <span className="font-semibold text-slate-700">{item.subject || 'Seluruh Kelas'}</span>
-                          </td>
-                          <td className="py-4 px-6 text-center">
-                            <span className={`inline-flex items-center justify-center px-3.5 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest border ${
-                              item.status === 'Hadir' 
-                                ? 'bg-emerald-50/80 text-emerald-700 border-emerald-200/60 shadow-[0_1px_2px_rgba(16,185,129,0.05)]' 
-                                : item.status === 'Sakit'
-                                ? 'bg-blue-50/80 text-blue-700 border-blue-200/60 shadow-[0_1px_2px_rgba(59,130,246,0.05)]'
-                                : item.status === 'Izin'
-                                ? 'bg-amber-50/80 text-amber-700 border-amber-200/60 shadow-[0_1px_2px_rgba(245,158,11,0.05)]'
-                                : 'bg-rose-50/80 text-rose-700 border-rose-200/60 shadow-[0_1px_2px_rgba(244,63,94,0.05)]'
-                            }`}>
-                              {item.status}
-                            </span>
-                          </td>
-                          <td className="py-4 px-6 text-slate-500 font-medium text-[13px]">
-                            {item.notes ? (
-                              <span className="italic">"{item.notes}"</span>
-                            ) : (
-                              <span className="text-slate-300 not-italic">-</span>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-                      {filteredAttendanceRecords.length === 0 && (
-                        <tr>
-                          <td colSpan={4} className="py-20 text-center">
-                            <div className="flex flex-col items-center justify-center space-y-3">
-                              <div className="bg-slate-50 p-4 rounded-full mb-2">
-                                <ClipboardList className="h-8 w-8 text-slate-400" />
-                              </div>
-                              <h4 className="text-slate-700 font-bold">Data Kosong</h4>
-                              <p className="text-slate-500 font-medium text-sm">Belum ada riwayat kehadiran terdaftar untuk rentang waktu ini.</p>
-                            </div>
-                          </td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
+            <PresensiView
+              currentStudent={currentStudent}
+              attendanceRecords={attendanceRecords}
+              availableAttendanceMonths={availableAttendanceMonths}
+              attendanceMonthFilter={attendanceMonthFilter}
+              setAttendanceMonthFilter={setAttendanceMonthFilter}
+            />
           )}
 
           {/* TAB 5: RIWAYAT PERKEMBANGAN BELAJAR */}
           {activeTab === 'perkembangan' && (
-            <div id="view-perkembangan" className="space-y-6">
-              <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs p-4 sm:p-6">
-                <div className="flex justify-between items-center mb-6">
-                  <div>
-                    <h3 className="text-base font-bold text-slate-900 dark:text-slate-100">Laporan Perkembangan Kompetensi Belajar</h3>
-                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Evaluasi deskriptif kemampuan akademik dan kompetensi sub-materi</p>
-                  </div>
-                  <button
-                    onClick={() => setShowChartPerkembangan(!showChartPerkembangan)}
-                    className="text-xs font-bold text-sky-600 hover:text-sky-700 bg-sky-50 px-3 py-1 rounded-full transition"
-                  >
-                    {showChartPerkembangan ? 'Sembunyikan Grafik' : 'Tampilkan Grafik'}
-                  </button>
-                </div>
-                {showChartPerkembangan && (
-                  <div className="mb-6">
-                  <PerkembanganProgress 
-                    data={learningProgress}
-                  />
-                  </div>
-                )}
-                <div className="relative before:absolute before:left-4 before:top-2 before:bottom-2 before:w-[2px] before:bg-slate-200 space-y-6">
-                  {learningProgress.map((item, idx) => (
-                    <div key={idx} className="relative pl-8">
-                      {/* Timeline dot */}
-                      <span className={`absolute left-2.5 top-2 w-3.5 h-3.5 rounded-full border-2 border-white shadow-sm ${
-                        item.status === 'Sangat Baik' ? 'bg-emerald-500' : item.status === 'Baik' ? 'bg-sky-500' : 'bg-amber-400'
-                      }`}></span>
-                      
-                      <div className="bg-slate-50 border border-slate-100 rounded-2xl p-5 hover:shadow-xs transition duration-150">
-                        <div className="flex items-center justify-between gap-2 flex-wrap mb-3">
-                          <div className="flex items-center gap-2">
-                            <span className="bg-sky-100 text-sky-800 text-[10px] font-black uppercase px-2.5 py-1 rounded-md">
-                              {item.subject}
-                            </span>
-                            <span className="text-xs text-slate-400 font-bold">{formatTanggalIndo(item.date, { withDayName: true })}</span>
-                          </div>
-
-                          <span className={`text-[10px] font-black px-2.5 py-1 rounded-md border ${
-                            item.status === 'Sangat Baik' 
-                              ? 'bg-emerald-50 text-emerald-700 border-emerald-200' 
-                              : item.status === 'Baik'
-                              ? 'bg-sky-50 text-sky-700 border-sky-200'
-                              : item.status === 'Cukup'
-                              ? 'bg-amber-50 text-amber-700 border-amber-200'
-                              : 'bg-rose-50 text-rose-700 border-rose-200'
-                          }`}>
-                            Evaluasi: {item.status}
-                          </span>
-                        </div>
-
-                        <h4 className="text-sm font-extrabold text-slate-800 dark:text-slate-200">{item.progress_title}</h4>
-                        <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed mt-2 p-3 bg-white rounded-xl border border-slate-200/50 italic">
-                          "{item.notes}"
-                        </p>
-                      </div>
-                    </div>
-                  ))}
-                  {learningProgress.length === 0 && (
-                    <div className="py-12 text-center text-slate-500 dark:text-slate-400 italic">Belum ada catatan perkembangan belajar.</div>
-                  )}
-                </div>
-              </div>
-            </div>
+            <PerkembanganView
+              currentStudent={currentStudent}
+              learningProgress={learningProgress}
+            />
           )}
 
           {/* TAB: UJI MATERI */}
@@ -2670,432 +2193,26 @@ export default function App() {
 
           {/* TAB 6: RIWAYAT NILAI-NILAI */}
           {activeTab === 'nilai' && (
-            <div id="view-nilai" className="space-y-6">
-              
-              {/* Grade Highlights */}
-              <div className="grid grid-cols-3 gap-2 sm:gap-4">
-                <div className="bg-white p-3 sm:p-5 rounded-2xl border border-slate-200/80 shadow-sm text-center flex flex-col justify-center">
-                  <span className="text-[9px] sm:text-xs font-bold text-slate-400 uppercase leading-tight line-clamp-1">Rata-rata</span>
-                  <h3 className="text-xl sm:text-3xl font-black text-sky-600 mt-0.5 sm:mt-1">{formatScore(gradeStats.average)}</h3>
-                  <p className="hidden sm:block text-[10px] text-slate-400 mt-1">Berdasarkan {gradeStats.total} entri nilai regular</p>
-                </div>
-                <div className="bg-white p-3 sm:p-5 rounded-2xl border border-slate-200/80 shadow-sm text-center flex flex-col justify-center">
-                  <span className="text-[9px] sm:text-xs font-bold text-slate-400 uppercase leading-tight line-clamp-1">Tertinggi</span>
-                  <h3 className="text-xl sm:text-3xl font-black text-emerald-600 mt-0.5 sm:mt-1">{formatScore(gradeStats.highest)}</h3>
-                  <p className="hidden sm:block text-[10px] text-slate-400 mt-1">Sangat memuaskan</p>
-                </div>
-                <div className="bg-white p-3 sm:p-5 rounded-2xl border border-slate-200/80 shadow-sm text-center flex flex-col justify-center">
-                  <span className="text-[9px] sm:text-xs font-bold text-slate-400 uppercase leading-tight line-clamp-1">Terendah</span>
-                  <h3 className="text-xl sm:text-3xl font-black text-amber-500 mt-0.5 sm:mt-1">{formatScore(gradeStats.lowest)}</h3>
-                  <p className="hidden sm:block text-[10px] text-slate-400 mt-1">Standar KKM: 75</p>
-                </div>
-              </div>
-
-              {/* Navigation Sub-Tabs for Grades Category */}
-              <div className="bg-slate-100 p-1.5 rounded-2xl flex flex-wrap gap-1 max-w-2xl">
-                <button
-                  id="btn-subtab-evaluasi"
-                  onClick={() => setGradeSubTab('evaluasi')}
-                  className={`flex-1 py-2 px-4 text-xs font-extrabold rounded-xl transition duration-150 ${
-                    gradeSubTab === 'evaluasi'
-                      ? 'bg-white text-sky-700 shadow-xs'
-                      : 'text-slate-600 hover:text-slate-900 dark:text-slate-100 hover:bg-slate-50'
-                  }`}
-                >
-                  Evaluasi Belajar (Harian)
-                </button>
-                <button
-                  id="btn-subtab-standar"
-                  onClick={() => setGradeSubTab('standar')}
-                  className={`flex-1 py-2 px-4 text-xs font-extrabold rounded-xl transition duration-150 ${
-                    gradeSubTab === 'standar'
-                      ? 'bg-white text-sky-700 shadow-xs'
-                      : 'text-slate-600 hover:text-slate-900 dark:text-slate-100 hover:bg-slate-50'
-                  }`}
-                >
-                  Nilai Standar / Bulanan
-                </button>
-                {['1 SMA', '2 SMA', '3 SMA'].includes(currentStudent?.jenjang_studi || '') && (
-                  <button
-                    id="btn-subtab-snbt"
-                    onClick={() => setGradeSubTab('snbt')}
-                    className={`flex-1 py-2 px-4 text-xs font-extrabold rounded-xl transition duration-150 ${
-                      gradeSubTab === 'snbt'
-                        ? 'bg-white text-sky-700 shadow-xs'
-                        : 'text-slate-600 hover:text-slate-900 dark:text-slate-100 hover:bg-slate-50'
-                    }`}
-                  >
-                    Simulasi UTBK / SNBT
-                  </button>
-                )}
-              </div>
-
-              {/* Sub-Tab 1: Nilai Evaluasi */}
-              {gradeSubTab === 'evaluasi' && (
-                <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs p-4 sm:p-6 space-y-4">
-                  <div className="flex items-center justify-between border-b border-slate-100 pb-4 mb-2">
-                    <div>
-                      <h3 className="text-base font-bold text-slate-900 dark:text-slate-100">Nilai Evaluasi Belajar (Sub-Bab)</h3>
-                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Nilai harian siswa berdasarkan materi pelajaran yang ditekuni</p>
-                    </div>
-                  </div>
-
-                  <div className="mb-6">
-                    <div className="flex justify-between items-center mb-4">
-                      <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest">Tren Nilai</h4>
-                      <button
-                        onClick={() => setShowChartNilai(!showChartNilai)}
-                        className="text-xs font-bold text-sky-600 hover:text-sky-700 bg-sky-50 px-3 py-1 rounded-full transition"
-                      >
-                        {showChartNilai ? 'Sembunyikan Grafik' : 'Tampilkan Grafik'}
-                      </button>
-                    </div>
-                    {showChartNilai && <SubjectBarChart data={nilaiEvaluasi} title="Rata-rata Nilai per Mata Pelajaran" xKey="mata_pelajaran" yKey="nilai" />}
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {nilaiEvaluasi.map((item, idx) => (
-                      <div key={idx} className="bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-700/60 p-4 rounded-2xl hover:shadow-xs transition duration-150 flex justify-between items-start gap-3">
-                        <div className="space-y-1.5 flex-1 min-w-0">
-                          <div className="flex flex-wrap items-center gap-1.5">
-                            <span className="text-[10px] bg-slate-200/70 dark:bg-slate-700 text-slate-600 dark:text-slate-300 font-bold px-2 py-0.5 rounded-md">
-                              {formatTanggalIndo(item.tanggal)}
-                            </span>
-                            {item.cabang && (
-                              <span className="text-[10px] bg-sky-50 dark:bg-sky-950/40 text-sky-700 dark:text-sky-300 font-medium px-2 py-0.5 rounded-md border border-sky-100 dark:border-sky-900/40">
-                                {item.cabang}
-                              </span>
-                            )}
-                            {item.jenjang_studi && (
-                              <span className="text-[10px] bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 font-medium px-2 py-0.5 rounded-md border border-indigo-100 dark:border-indigo-900/40">
-                                {item.jenjang_studi}
-                              </span>
-                            )}
-                          </div>
-                          <h4 className="text-sm font-black text-slate-800 dark:text-slate-100 mt-1 truncate">{item.mata_pelajaran}</h4>
-                          <p className="text-xs text-slate-600 dark:text-slate-400">
-                            Materi/Kode Soal: <strong className="font-semibold text-slate-800 dark:text-slate-200">{item.sub_bab_kode_soal || item.sub_bab || 'Evaluasi Harian'}</strong>
-                          </p>
-                          {(item.nama_pengajar || item.kode_pengajar) && (
-                            <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                              Pengajar: <span className="font-medium text-slate-700 dark:text-slate-300">{item.nama_pengajar || '-'}{item.kode_pengajar ? ` (${item.kode_pengajar})` : ''}</span>
-                            </p>
-                          )}
-                        </div>
-                        <div className="text-right shrink-0">
-                          <span className={`text-lg font-black px-3 py-1.5 rounded-xl block shadow-2xs ${
-                            Number(item.nilai) >= 90 ? 'bg-emerald-50 text-emerald-600 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-400 dark:border-emerald-800' : 'bg-sky-50 text-sky-600 border border-sky-200 dark:bg-sky-950/40 dark:text-sky-400 dark:border-sky-800'
-                          }`}>
-                            {formatScore(item.nilai)}
-                          </span>
-                        </div>
-                      </div>
-                    ))}
-                    {nilaiEvaluasi.length === 0 && (
-                      <div className="col-span-2 py-12 text-center text-slate-500 dark:text-slate-400 italic">Belum ada data nilai evaluasi belajar terdaftar.</div>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {/* Sub-Tab 2: Nilai Standar / Bulanan */}
-              {gradeSubTab === 'standar' && (
-                <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs p-4 sm:p-6 space-y-4">
-                  <div className="flex items-center justify-between border-b border-slate-100 pb-4 mb-2">
-                    <div>
-                      <h3 className="text-base font-bold text-slate-900 dark:text-slate-100">Nilai Standar</h3>
-                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Rekapitulasi ujian terstruktur (PTS, PAS, PAT) secara berkala</p>
-                    </div>
-                  </div>
-
-                  <div className="mb-6">
-                    <div className="flex justify-between items-center mb-4">
-                      <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest">Tren Nilai</h4>
-                      <button
-                        onClick={() => setShowChartNilai(!showChartNilai)}
-                        className="text-xs font-bold text-sky-600 hover:text-sky-700 bg-sky-50 px-3 py-1 rounded-full transition"
-                      >
-                        {showChartNilai ? 'Sembunyikan Grafik' : 'Tampilkan Grafik'}
-                      </button>
-                    </div>
-                    {showChartNilai && <SubjectBarChart data={nilaiStandar} title="Rata-rata Nilai per Mata Pelajaran" xKey="mata_pelajaran" yKey="nilai" />}
-                  </div>
-
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left border-collapse">
-                      <thead>
-                        <tr className="border-b border-slate-200 text-xs font-black uppercase text-slate-400 tracking-wider">
-                          <th className="py-3 px-4">Tanggal</th>
-                          <th className="py-3 px-4">Mata Pelajaran</th>
-                          <th className="py-3 px-4">Jenis Evaluasi</th>
-                          <th className="py-3 px-4 text-right">Nilai</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100 text-xs text-slate-600 dark:text-slate-300 font-bold">
-                        {nilaiStandar.map((item, idx) => (
-                          <tr key={idx} className="hover:bg-slate-50 transition">
-                            <td className="py-3.5 px-4">{formatTanggalIndo(item.tanggal)}</td>
-                            <td className="py-3.5 px-4 text-slate-800 dark:text-slate-200">{item.mata_pelajaran}</td>
-                            <td className="py-3.5 px-4">
-                              <span className="bg-amber-50 text-amber-800 border border-amber-100 px-2 py-0.5 rounded-md">
-                                {item.jenis_tes}
-                              </span>
-                            </td>
-                            <td className="py-3.5 px-4 text-right text-sm font-black text-slate-900 dark:text-slate-100">{formatScore(item.nilai)}</td>
-                          </tr>
-                        ))}
-                        {nilaiStandar.length === 0 && (
-                          <tr>
-                            <td colSpan={4} className="py-12 text-center text-slate-500 dark:text-slate-400 italic">Belum ada data nilai standar / Bulanan terdaftar.</td>
-                          </tr>
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
-
-              {/* Sub-Tab 3: Nilai UTBK SNBT */}
-              {gradeSubTab === 'snbt' && (
-                <div className="space-y-6">
-                  <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs p-4 sm:p-6">
-                    <div className="flex justify-between items-center mb-4">
-                      <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest">Tren Nilai</h4>
-                      <button
-                        onClick={() => setShowChartNilai(!showChartNilai)}
-                        className="text-xs font-bold text-sky-600 hover:text-sky-700 bg-sky-50 px-3 py-1 rounded-full transition"
-                      >
-                        {showChartNilai ? 'Sembunyikan Grafik' : 'Tampilkan Grafik'}
-                      </button>
-                    </div>
-                    {showChartNilai && <SubjectBarChart data={groupedSnbt.map(r => ({ mata_pelajaran: r.jenis_tes, nilai: r.rerata }))} title="Rata-rata Nilai per Jenis Tes" xKey="mata_pelajaran" yKey="nilai" />}
-                  </div>
-
-                  {groupedSnbt.map((item, idx) => (
-                    <div key={idx} className="bg-white rounded-2xl border border-slate-200/80 shadow-xs p-4 sm:p-6 space-y-6">
-                      <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-100 pb-4 gap-4">
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <span className="bg-red-50 text-red-700 border border-red-200 text-[10px] font-black uppercase px-2.5 py-1 rounded-md">
-                              SNBT - UTBK
-                            </span>
-                            <span className="text-xs text-slate-400 font-extrabold">{formatTanggalIndo(item.tanggal)}</span>
-                          </div>
-                          <h3 className="text-base font-black text-slate-900 dark:text-slate-100 mt-1.5">{item.jenis_tes}</h3>
-                        </div>
-
-                        {/* Overall Big Scores */}
-                        <div className="flex items-center gap-4">
-                          <div className="text-center bg-sky-50 border border-sky-100 p-3 rounded-xl min-w-[90px]">
-                            <span className="text-[10px] font-bold text-slate-400 uppercase">Rata-rata</span>
-                            <div className="text-lg font-black text-sky-700">{formatScore(item.rerata)}</div>
-                          </div>
-                          <div className="text-center bg-emerald-50 border border-emerald-100 p-3 rounded-xl min-w-[90px]">
-                            <span className="text-[10px] font-bold text-slate-400 uppercase">Skor Total</span>
-                            <div className="text-lg font-black text-emerald-700">{formatScore(item.total)}</div>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* UTBK Subtests Breakdown */}
-                      <div>
-                        <h4 className="text-xs font-extrabold text-slate-400 uppercase tracking-wider mb-4">Rincian Sub-Tes Potensi & Literasi</h4>
-                        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
-                          {Object.entries(item.subjects).length > 0 ? (
-                            Object.entries(item.subjects).map(([subject, score], sIdx) => (
-                              <div key={sIdx} className="bg-slate-50 p-3 rounded-xl border border-slate-100 text-center flex flex-col justify-between">
-                                <div className="text-[10px] font-extrabold text-slate-400 uppercase leading-snug line-clamp-2" title={subject}>
-                                  {subject}
-                                </div>
-                                <div className="text-base font-black text-slate-800 dark:text-slate-200 mt-1">{formatScore(score)}</div>
-                              </div>
-                            ))
-                          ) : (
-                            <div className="col-span-full text-center text-slate-400 text-xs italic py-2">
-                              Belum ada nilai rincian mata pelajaran
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-
-                  {/* Empty state & Simulation button */}
-                  <div className="p-4 bg-slate-50 border border-slate-200/60 rounded-2xl">
-                    <p className="text-xs text-slate-500 dark:text-slate-400 font-medium text-center sm:text-left">Lacak perkembangan kesiapan SNBT & UTBK siswa secara terukur dengan simulasi Try Out berkala.</p>
-                  </div>
-
-                  {groupedSnbt.length === 0 && (
-                    <div className="bg-white border border-slate-100 rounded-2xl py-12 text-center text-slate-500 dark:text-slate-400 italic">Belum ada riwayat hasil simulasi UTBK terdaftar.</div>
-                  )}
-                </div>
-              )}
-            </div>
+            <NilaiView
+              currentStudent={currentStudent}
+              nilaiEvaluasi={nilaiEvaluasi}
+              nilaiStandar={nilaiStandar}
+              nilaiSnbtUtbk={nilaiSnbtUtbk}
+              groupedSnbt={groupedSnbt}
+            />
           )}
 
           {/* TAB 7: LAYANAN DI LUAR KBM */}
           {activeTab === 'luar-kbm' && (
-            <div id="view-luar-kbm" className="space-y-6">
-              {/* Header Action Banner */}
-              <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs p-4 sm:p-6 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-                <div>
-                  <h3 className="text-base font-bold text-slate-900 dark:text-slate-100">Layanan Tambahan & Konsultasi</h3>
-                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                    Reservasi jadwal bimbingan, konseling kepribadian, pembinaan karakter, atau presensi layanan luar KBM
-                  </p>
-                </div>
-                <div className="flex items-center gap-2.5 w-full md:w-auto flex-wrap sm:flex-nowrap">
-                  <button
-                    onClick={() => setIsBookingModalOpen(true)}
-                    className="flex-1 sm:flex-none text-xs font-extrabold bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2.5 rounded-xl shadow-xs flex items-center justify-center gap-1.5 transition cursor-pointer"
-                  >
-                    <CalendarDays className="h-4 w-4" />
-                    + Reservasi Jadwal
-                  </button>
-                  <button
-                    onClick={() => setIsOutsideServiceModalOpen(true)}
-                    className="flex-1 sm:flex-none text-xs font-extrabold bg-teal-600 hover:bg-teal-700 text-white px-4 py-2.5 rounded-xl shadow-xs flex items-center justify-center gap-1.5 transition cursor-pointer"
-                  >
-                    <HeartHandshake className="h-4 w-4" />
-                    + Presensi Layanan
-                  </button>
-                </div>
-              </div>
-
-              {/* Section 1: Status Booking / Permintaan Layanan */}
-              <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs p-4 sm:p-6 space-y-4">
-                <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                  <div className="flex items-center gap-2">
-                    <CalendarDays className="h-5 w-5 text-indigo-600" />
-                    <h4 className="font-bold text-slate-900 dark:text-slate-100 text-sm">Status Permintaan & Reservasi Layanan</h4>
-                  </div>
-                  <span className="text-xs font-bold text-slate-400">
-                    {permintaanPelayanan.length} Permintaan
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-1 gap-3">
-                  {permintaanPelayanan.map((item, idx) => {
-                    const statusStr = (item.status || 'Menunggu').toLowerCase();
-                    const isApproved = statusStr.includes('setuju') || statusStr.includes('acc');
-                    const isRejected = statusStr.includes('tolak') || statusStr.includes('batal');
-                    const bookingDate = item.tanggal_pengajuan || item.tanggal || '';
-                    const bookingTeacher = item.nama_pengajar || item.pengajar || 'Pengajar';
-
-                    return (
-                      <div key={idx} className="bg-slate-50 border border-slate-100 p-4 rounded-2xl flex flex-col sm:flex-row sm:items-start justify-between gap-3 hover:shadow-xs transition">
-                        <div className="space-y-1.5 flex-1 min-w-0">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="bg-indigo-50 text-indigo-800 text-[10px] font-black uppercase px-2.5 py-0.5 rounded-md border border-indigo-100">
-                              {item.mata_pelajaran}
-                            </span>
-                            <span className="text-xs text-slate-400 font-bold">Rencana: {bookingDate ? formatTanggalIndo(bookingDate, { withDayName: true }) : '-'}</span>
-                          </div>
-                          <p className="text-xs text-slate-700 dark:text-slate-300 font-semibold leading-relaxed">
-                            {item.keperluan || 'Pengajuan Jadwal Layanan'}
-                          </p>
-                          <div className="flex items-center gap-3 text-[11px] font-bold text-slate-400">
-                            <span>Pengajar Diharapkan: <strong className="text-slate-700 dark:text-slate-300">{bookingTeacher}</strong></span>
-                            {item.cabang && <span>• Cabang: <strong className="text-slate-700 dark:text-slate-300">{item.cabang}</strong></span>}
-                          </div>
-
-                          {(item.tanggal_disetujui || item.jam_disetujui) && (
-                            <div className="mt-1 p-2 bg-emerald-50/70 border border-emerald-100 rounded-xl text-[11px] text-emerald-800 font-bold flex items-center gap-2">
-                              <CheckCircle className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
-                              <span>
-                                Disetujui untuk tanggal <strong>{formatTanggalIndo(item.tanggal_disetujui || bookingDate || item.tanggal || '', { withDayName: true })}</strong> {item.jam_disetujui && `jam ${item.jam_disetujui}`}
-                              </span>
-                            </div>
-                          )}
-                        </div>
-
-                        <div className="text-right shrink-0">
-                          {isApproved ? (
-                            <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-black px-3 py-1.5 rounded-full inline-flex items-center gap-1">
-                              <CheckCircle className="h-3 w-3" />
-                              Disetujui
-                            </span>
-                          ) : isRejected ? (
-                            <span className="bg-rose-50 text-rose-700 border border-rose-200 text-[10px] font-black px-3 py-1.5 rounded-full">
-                              Ditolak
-                            </span>
-                          ) : (
-                            <span className="bg-amber-50 text-amber-700 border border-amber-200 text-[10px] font-black px-3 py-1.5 rounded-full inline-flex items-center gap-1">
-                              <Clock className="h-3 w-3 animate-spin" />
-                              Menunggu Approval
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-
-                  {permintaanPelayanan.length === 0 && (
-                    <div className="py-8 text-center text-slate-400 text-xs italic">
-                      Belum ada permintaan / reservasi jadwal layanan yang diajukan.
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Section 2: Riwayat Layanan Terlaksana */}
-              <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs p-4 sm:p-6">
-                <div className="flex justify-between items-center mb-6">
-                  <div>
-                    <h3 className="text-base font-bold text-slate-900 dark:text-slate-100">Riwayat Layanan di Luar KBM (Terlaksana)</h3>
-                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Layanan konseling kepribadian, pembinaan karakter, konsultasi karir, and bimbingan minat bakat tambahan</p>
-                  </div>
-                  <button
-                    onClick={() => setShowChartLuarKbm(!showChartLuarKbm)}
-                    className="text-xs font-bold text-sky-600 hover:text-sky-700 bg-sky-50 px-3 py-1 rounded-full transition cursor-pointer"
-                  >
-                    {showChartLuarKbm ? 'Sembunyikan Grafik' : 'Tampilkan Grafik'}
-                  </button>
-                </div>
-                {showChartLuarKbm && (
-                  <div className="mb-6 bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs">
-                  <ServicePieChart 
-                    data={outsideServices}
-                  />
-                  </div>
-                )}
-                <div className="grid grid-cols-1 gap-4">
-                  {outsideServices.map((item, idx) => (
-                    <div key={idx} className="bg-slate-50 border border-slate-100 p-5 rounded-2xl flex flex-col sm:flex-row sm:items-start justify-between gap-4 hover:shadow-xs transition">
-                      <div className="space-y-2 flex-1 min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="bg-emerald-50 text-emerald-800 text-[10px] font-black uppercase px-2.5 py-1 rounded-md border border-emerald-100">
-                            {item.mata_pelajaran}
-                          </span>
-                          <span className="text-xs text-slate-400 font-bold">{formatTanggalIndo(item.tanggal, { withDayName: true })}</span>
-                          {item.durasi && (
-                            <span className="bg-indigo-50 text-indigo-700 text-[10px] font-black px-2.5 py-1 rounded-md border border-indigo-100">
-                              Durasi: {item.durasi}
-                            </span>
-                          )}
-                        </div>
-                        <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed italic">
-                          "{item.materi_sub_bab}"
-                        </p>
-                        <div className="flex items-center gap-4 text-[11px] font-bold text-slate-400">
-                          <span>Pengajar/Petugas: <strong className="text-slate-700 dark:text-slate-300">{item.pengajar}</strong></span>
-                          {item.cabang && <span>• Cabang: <strong className="text-slate-700 dark:text-slate-300">{item.cabang}</strong></span>}
-                        </div>
-                      </div>
-
-                      <div className="text-right shrink-0">
-                        <span className="bg-sky-50 text-sky-700 text-[10px] font-black px-3 py-1.5 rounded-full border border-sky-100">
-                          Terlaksana
-                        </span>
-                      </div>
-                    </div>
-                  ))}
-                  {outsideServices.length === 0 && (
-                    <div className="py-12 text-center text-slate-500 dark:text-slate-400 italic">Belum ada riwayat pelayanan luar KBM.</div>
-                  )}
-                </div>
-              </div>
-            </div>
+            <LuarKbmView
+              currentStudent={currentStudent}
+              permintaanPelayanan={permintaanPelayanan}
+              outsideServices={outsideServices}
+              showChartLuarKbm={showChartLuarKbm}
+              setShowChartLuarKbm={setShowChartLuarKbm}
+              setIsBookingModalOpen={setIsBookingModalOpen}
+              setIsOutsideServiceModalOpen={setIsOutsideServiceModalOpen}
+            />
           )}
 
 
@@ -3115,96 +2232,152 @@ export default function App() {
       </main>
 
       {/* MOBILE BOTTOM NAVIGATION BAR */}
-      <nav id="mobile-bottom-nav" className="md:hidden sticky bottom-0 bg-white/90 border-t border-slate-200/80 pt-2 pb-6 px-2 flex justify-around items-center z-40 backdrop-blur-xl shadow-[0_-4px_20px_-10px_rgba(0,0,0,0.1)]">
+      <nav id="mobile-bottom-nav" className="md:hidden fixed bottom-3 left-3 right-3 z-40 bg-white/90 dark:bg-slate-900/90 backdrop-blur-2xl border border-slate-200/80 dark:border-slate-800/80 px-2 py-1.5 rounded-3xl flex justify-around items-center shadow-[0_12px_36px_-8px_rgba(0,0,0,0.18)] transition-all duration-300">
         <button 
           id="btn-bottom-nav-overview"
           onClick={() => setActiveTab('overview')} 
-          className={`flex flex-col items-center p-2 transition-colors rounded-xl ${activeTab === 'overview' ? 'text-sky-600' : 'text-slate-400 hover:text-slate-600 dark:text-slate-300'}`}
+          className={`flex flex-col items-center justify-center py-1.5 px-3 transition-all duration-200 rounded-2xl cursor-pointer ${
+            activeTab === 'overview'
+              ? 'bg-sky-50 dark:bg-sky-950/70 text-sky-600 dark:text-sky-400 font-black shadow-xs border border-sky-100 dark:border-sky-900/60 scale-102'
+              : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800/50 font-medium'
+          }`}
         >
-          <BookOpen className={`h-6 w-6 ${activeTab === 'overview' ? 'fill-sky-100' : ''}`} />
-          <span className="text-[10px] font-bold mt-1 tracking-wide">Dashboard</span>
+          <div className="relative">
+            <BookOpen className={`h-5 w-5 ${activeTab === 'overview' ? 'stroke-[2.5px]' : 'stroke-2'}`} />
+            {activeTab === 'overview' && (
+              <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-1 h-1 bg-sky-500 rounded-full" />
+            )}
+          </div>
+          <span className="text-[10px] tracking-tight mt-1">Dashboard</span>
         </button>
 
         <button 
           id="btn-bottom-nav-kbm"
           onClick={() => setActiveTab('kbm-reguler')} 
-          className={`flex flex-col items-center p-2 transition-colors rounded-xl ${activeTab === 'kbm-reguler' || activeTab === 'kbm-tambahan' ? 'text-sky-600' : 'text-slate-400 hover:text-slate-600 dark:text-slate-300'}`}
+          className={`flex flex-col items-center justify-center py-1.5 px-3 transition-all duration-200 rounded-2xl cursor-pointer ${
+            activeTab === 'kbm-reguler' || activeTab === 'kbm-tambahan'
+              ? 'bg-sky-50 dark:bg-sky-950/70 text-sky-600 dark:text-sky-400 font-black shadow-xs border border-sky-100 dark:border-sky-900/60 scale-102'
+              : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800/50 font-medium'
+          }`}
         >
-          <Calendar className={`h-6 w-6 ${activeTab === 'kbm-reguler' || activeTab === 'kbm-tambahan' ? 'fill-sky-100' : ''}`} />
-          <span className="text-[10px] font-bold mt-1 tracking-wide">Jadwal</span>
+          <div className="relative">
+            <Calendar className={`h-5 w-5 ${activeTab === 'kbm-reguler' || activeTab === 'kbm-tambahan' ? 'stroke-[2.5px]' : 'stroke-2'}`} />
+            {(activeTab === 'kbm-reguler' || activeTab === 'kbm-tambahan') && (
+              <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-1 h-1 bg-sky-500 rounded-full" />
+            )}
+          </div>
+          <span className="text-[10px] tracking-tight mt-1">Jadwal</span>
         </button>
 
         <button 
           id="btn-bottom-nav-presensi"
           onClick={() => setActiveTab('presensi')} 
-          className={`flex flex-col items-center p-2 transition-colors rounded-xl ${activeTab === 'presensi' ? 'text-sky-600' : 'text-slate-400 hover:text-slate-600 dark:text-slate-300'}`}
+          className={`flex flex-col items-center justify-center py-1.5 px-3 transition-all duration-200 rounded-2xl cursor-pointer ${
+            activeTab === 'presensi'
+              ? 'bg-sky-50 dark:bg-sky-950/70 text-sky-600 dark:text-sky-400 font-black shadow-xs border border-sky-100 dark:border-sky-900/60 scale-102'
+              : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800/50 font-medium'
+          }`}
         >
-          <ClipboardList className={`h-6 w-6 ${activeTab === 'presensi' ? 'fill-sky-100' : ''}`} />
-          <span className="text-[10px] font-bold mt-1 tracking-wide">Presensi</span>
+          <div className="relative">
+            <ClipboardList className={`h-5 w-5 ${activeTab === 'presensi' ? 'stroke-[2.5px]' : 'stroke-2'}`} />
+            {activeTab === 'presensi' && (
+              <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-1 h-1 bg-sky-500 rounded-full" />
+            )}
+          </div>
+          <span className="text-[10px] tracking-tight mt-1">Presensi</span>
         </button>
 
         <button 
           id="btn-bottom-nav-nilai"
           onClick={() => setActiveTab('nilai')} 
-          className={`flex flex-col items-center p-2 transition-colors rounded-xl ${activeTab === 'nilai' || activeTab === 'perkembangan' ? 'text-sky-600' : 'text-slate-400 hover:text-slate-600 dark:text-slate-300'}`}
+          className={`flex flex-col items-center justify-center py-1.5 px-3 transition-all duration-200 rounded-2xl cursor-pointer ${
+            activeTab === 'nilai' || activeTab === 'perkembangan'
+              ? 'bg-sky-50 dark:bg-sky-950/70 text-sky-600 dark:text-sky-400 font-black shadow-xs border border-sky-100 dark:border-sky-900/60 scale-102'
+              : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800/50 font-medium'
+          }`}
         >
-          <Award className={`h-6 w-6 ${activeTab === 'nilai' || activeTab === 'perkembangan' ? 'fill-sky-100' : ''}`} />
-          <span className="text-[10px] font-bold mt-1 tracking-wide">Nilai</span>
+          <div className="relative">
+            <Award className={`h-5 w-5 ${activeTab === 'nilai' || activeTab === 'perkembangan' ? 'stroke-[2.5px]' : 'stroke-2'}`} />
+            {(activeTab === 'nilai' || activeTab === 'perkembangan') && (
+              <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-1 h-1 bg-sky-500 rounded-full" />
+            )}
+          </div>
+          <span className="text-[10px] tracking-tight mt-1">Nilai</span>
         </button>
 
         <button 
           id="btn-bottom-nav-menu"
           onClick={() => setIsMobileGridMenuOpen(true)} 
-          className="flex flex-col items-center p-2 text-slate-400 hover:text-slate-600 dark:text-slate-300 transition-colors rounded-xl"
+          className="flex flex-col items-center justify-center py-1.5 px-3 text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-all duration-200 rounded-2xl cursor-pointer font-medium"
         >
-          <Menu className="h-6 w-6" />
-          <span className="text-[10px] font-bold mt-1 tracking-wide">Lainnya</span>
+          <Menu className="h-5 w-5 stroke-2" />
+          <span className="text-[10px] tracking-tight mt-1">Lainnya</span>
         </button>
       </nav>
 
       {/* MOBILE GRID MENU OVERLAY */}
       {isMobileGridMenuOpen && (
         <div 
-          className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm md:hidden animate-in fade-in flex items-end"
+          className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-md md:hidden animate-fade-in flex items-end"
           onClick={() => setIsMobileGridMenuOpen(false)}
         >
           <div 
-            className="bg-white w-full rounded-t-3xl p-6 pb-12 animate-in slide-in-from-bottom-full border-t border-slate-200 shadow-2xl"
+            className="bg-white dark:bg-slate-900 w-full rounded-t-3xl p-6 pb-10 border-t border-slate-200/80 dark:border-slate-800 shadow-2xl animate-slide-up space-y-5 max-h-[85vh] overflow-y-auto"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex justify-between items-center mb-6">
-              <h3 className="text-lg font-black text-slate-800 dark:text-slate-200">Menu Navigasi</h3>
-              <button 
-                onClick={() => setIsMobileGridMenuOpen(false)}
-                className="p-2 bg-slate-100 rounded-full text-slate-500 hover:text-slate-800 dark:text-slate-200"
-              >
-                <X className="h-5 w-5" />
-              </button>
+            {/* Drag Handle & Header */}
+            <div>
+              <div className="w-12 h-1.5 bg-slate-200 dark:bg-slate-700 rounded-full mx-auto mb-4" />
+              <div className="flex justify-between items-center pb-3 border-b border-slate-100 dark:border-slate-800">
+                <div>
+                  <h3 className="text-base font-black text-slate-900 dark:text-slate-100">Navigasi & Layanan Siswa</h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">Pilih modul untuk melihat data dan fitur lengkap</p>
+                </div>
+                <button 
+                  onClick={() => setIsMobileGridMenuOpen(false)}
+                  className="p-2 bg-slate-100 dark:bg-slate-800 rounded-full text-slate-500 hover:text-slate-800 dark:text-slate-300 cursor-pointer"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
             </div>
             
-            <div className="grid grid-cols-4 gap-4">
+            {/* Bento Category Grid */}
+            <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
               {[
-                { id: 'overview', icon: BookOpen, label: 'Dashboard', color: 'bg-sky-50 text-sky-600 border-sky-100' },
-                { id: 'kbm-reguler', icon: Calendar, label: 'Reguler', color: 'bg-emerald-50 text-emerald-600 border-emerald-100' },
-                { id: 'kbm-tambahan', icon: Clock, label: 'Tambahan', color: 'bg-indigo-50 text-indigo-600 border-indigo-100' },
-                { id: 'presensi', icon: ClipboardList, label: 'Presensi', color: 'bg-amber-50 text-amber-600 border-amber-100' },
-                { id: 'perkembangan', icon: BookMarked, label: 'Perkembangan', color: 'bg-purple-50 text-purple-600 border-purple-100' },
-                { id: 'uji-materi', icon: FileText, label: 'Uji Materi', color: 'bg-indigo-50 text-indigo-600 border-indigo-100' },
-                { id: 'nilai', icon: Award, label: 'Nilai Rapor', color: 'bg-rose-50 text-rose-600 border-rose-100' },
-                { id: 'luar-kbm', icon: HeartHandshake, label: 'Layanan Luar KBM', color: 'bg-teal-50 text-teal-600 border-teal-100' },
-                { id: 'analisa', icon: Search, label: 'Analisa', color: 'bg-indigo-50 text-indigo-600 border-indigo-100' },
-              ].map(item => (
-                <button
-                  key={item.id}
-                  onClick={() => { setActiveTab(item.id as any); setIsMobileGridMenuOpen(false); }}
-                  className="flex flex-col items-center gap-2 group"
-                >
-                  <div className={`p-4 rounded-2xl ${item.color} shadow-sm border group-active:scale-95 transition-transform w-full flex justify-center items-center`}>
-                    <item.icon className="h-6 w-6" />
-                  </div>
-                  <span className="text-[10px] font-bold text-slate-600 dark:text-slate-300 text-center leading-tight line-clamp-2">{item.label}</span>
-                </button>
-              ))}
+                { id: 'overview', icon: BookOpen, label: 'Dashboard', desc: 'Ringkasan Utama', color: 'bg-sky-50 dark:bg-sky-950/50 text-sky-600 dark:text-sky-400 border-sky-100 dark:border-sky-900/50' },
+                { id: 'kbm-reguler', icon: Calendar, label: 'Jadwal Reguler', desc: 'Sesi Rutin', color: 'bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 border-emerald-100 dark:border-emerald-900/50' },
+                { id: 'kbm-tambahan', icon: Clock, label: 'Jadwal Khusus', desc: 'Kelas Tambahan', color: 'bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 border-indigo-100 dark:border-indigo-900/50' },
+                { id: 'presensi', icon: ClipboardList, label: 'Presensi', desc: 'Riwayat Kehadiran', color: 'bg-amber-50 dark:bg-amber-950/50 text-amber-600 dark:text-amber-400 border-amber-100 dark:border-amber-900/50' },
+                { id: 'perkembangan', icon: BookMarked, label: 'Perkembangan', desc: 'Catatan Belajar', color: 'bg-purple-50 dark:bg-purple-950/50 text-purple-600 dark:text-purple-400 border-purple-100 dark:border-purple-900/50' },
+                { id: 'uji-materi', icon: FileText, label: 'Uji Materi', desc: 'Kuis & Evaluasi', color: 'bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 border-blue-100 dark:border-blue-900/50' },
+                { id: 'nilai', icon: Award, label: 'Nilai Rapor', desc: 'Evaluasi Tryout', color: 'bg-rose-50 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400 border-rose-100 dark:border-rose-900/50' },
+                { id: 'luar-kbm', icon: HeartHandshake, label: 'Luar KBM', desc: 'Konsultasi & Layanan', color: 'bg-teal-50 dark:bg-teal-950/50 text-teal-600 dark:text-teal-400 border-teal-100 dark:border-teal-900/50' },
+                { id: 'analisa', icon: Search, label: 'Analisis', desc: 'Grafik Performansi', color: 'bg-cyan-50 dark:bg-cyan-950/50 text-cyan-600 dark:text-cyan-400 border-cyan-100 dark:border-cyan-900/50' },
+              ].map(item => {
+                const isActive = activeTab === item.id;
+                return (
+                  <button
+                    key={item.id}
+                    onClick={() => { setActiveTab(item.id as any); setIsMobileGridMenuOpen(false); }}
+                    className={`flex flex-col items-center justify-between p-3 rounded-2xl border transition duration-200 text-center active:scale-95 cursor-pointer ${
+                      isActive
+                        ? 'bg-slate-900 text-white border-slate-900 shadow-md'
+                        : 'bg-slate-50/80 dark:bg-slate-800/60 hover:bg-white dark:hover:bg-slate-800 border-slate-200/70 dark:border-slate-700/70'
+                    }`}
+                  >
+                    <div className={`p-3 rounded-xl ${isActive ? 'bg-white/10 text-white' : item.color} border mb-2`}>
+                      <item.icon className="h-5 w-5" />
+                    </div>
+                    <span className={`text-xs font-bold leading-tight line-clamp-1 ${isActive ? 'text-white' : 'text-slate-800 dark:text-slate-100'}`}>
+                      {item.label}
+                    </span>
+                    <span className={`text-[9px] font-medium mt-0.5 line-clamp-1 ${isActive ? 'text-slate-300' : 'text-slate-400'}`}>
+                      {item.desc}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
           </div>
         </div>

@@ -1,4 +1,5 @@
 import React, { useMemo } from 'react';
+import { Target, TrendingUp, Sparkles, Activity } from 'lucide-react';
 
 interface PerkembanganProgressProps {
   data: any[];
@@ -21,27 +22,43 @@ export const PerkembanganProgress: React.FC<PerkembanganProgressProps> = ({ data
     };
   }, [data]);
 
-  const ProgressBar = ({ label, value, color }: { label: string; value: number; color: string }) => (
-    <div className="mb-4">
-      <div className="flex justify-between items-center mb-1">
-        <span className="text-sm font-medium text-slate-700">{label}</span>
-        <span className={`text-sm font-bold ${color.replace('bg-', 'text-')}`}>{Math.round(value)}%</span>
+  const ProgressBar = ({ label, value, color, badgeBg }: { label: string; value: number; color: string; badgeBg: string }) => {
+    const rounded = Math.round(value);
+    return (
+      <div className="space-y-2 bg-slate-50 dark:bg-slate-900/50 p-4 rounded-2xl border border-slate-100 dark:border-slate-800">
+        <div className="flex justify-between items-center">
+          <span className="text-xs font-bold text-slate-700 dark:text-slate-300">{label}</span>
+          <span className={`text-xs font-black px-2.5 py-0.5 rounded-lg ${badgeBg}`}>
+            {rounded}%
+          </span>
+        </div>
+        <div className="w-full bg-slate-200 dark:bg-slate-700 h-2.5 rounded-full overflow-hidden">
+          <div className={`${color} h-2.5 rounded-full transition-all duration-500`} style={{ width: `${Math.min(100, Math.max(0, rounded))}%` }}></div>
+        </div>
       </div>
-      <div className="w-full bg-slate-100 rounded-full h-2.5">
-        <div className={`${color} h-2.5 rounded-full`} style={{ width: `${value}%` }}></div>
-      </div>
-    </div>
-  );
+    );
+  };
 
   return (
-    <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm">
-      <div className="flex items-center gap-2 mb-6">
-        <div className="w-1 h-6 bg-violet-500 rounded-full"></div>
-        <h3 className="text-base font-bold text-slate-900">Perkembangan Belajar</h3>
-      </div>
-      <ProgressBar label="Rata-rata Penguasaan" value={averages.penguasaan} color="bg-violet-600" />
-      <ProgressBar label="Rata-rata Penjelasan" value={averages.penjelasan} color="bg-sky-600" />
-      <ProgressBar label="Rata-rata Kondisi" value={averages.kondisi} color="bg-emerald-600" />
+    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <ProgressBar 
+        label="Rata-rata Penguasaan Materi" 
+        value={averages.penguasaan} 
+        color="bg-violet-600" 
+        badgeBg="bg-violet-100 dark:bg-violet-950/60 text-violet-700 dark:text-violet-300 border border-violet-200 dark:border-violet-800"
+      />
+      <ProgressBar 
+        label="Rata-rata Kejelasan Penjelasan" 
+        value={averages.penjelasan} 
+        color="bg-sky-600" 
+        badgeBg="bg-sky-100 dark:bg-sky-950/60 text-sky-700 dark:text-sky-300 border border-sky-200 dark:border-sky-800"
+      />
+      <ProgressBar 
+        label="Rata-rata Kondisi & Pemahaman" 
+        value={averages.kondisi} 
+        color="bg-emerald-600" 
+        badgeBg="bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800"
+      />
     </div>
   );
 };
