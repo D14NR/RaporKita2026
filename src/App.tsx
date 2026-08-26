@@ -900,16 +900,16 @@ export default function App() {
         
         // Match with the active student's profile data
         const activeCabang = (selectedStudentData?.cabang || currentStudent.cabang || '').trim();
-        const activeJenjang = (selectedStudentData?.jenjang_studi || currentStudent.jenjang_studi || '').trim();
         const activeKelas = (selectedStudentData?.kelompok_kelas || currentStudent.kelompok_kelas || '').trim();
         
         if (activeCabang) {
-          queryReg = queryReg.eq('cabang', activeCabang);
-          queryKhusus = queryKhusus.eq('cabang', activeCabang);
+          queryReg = queryReg.ilike('cabang', `%${activeCabang}%`);
+          queryKhusus = queryKhusus.ilike('cabang', `%${activeCabang}%`);
         }
 
-        queryReg = queryReg.order('class_order', { ascending: true }).limit(200);
-        queryKhusus = queryKhusus.order('tanggal', { ascending: false }).order('class_order', { ascending: true }).limit(200);
+        // Fetch all recent rows for the branch and do robust case-insensitive filtering in JS
+        queryReg = queryReg.order('class_order', { ascending: true });
+        queryKhusus = queryKhusus.order('tanggal', { ascending: false }).order('class_order', { ascending: true });
         
         const [regRes, khususRes] = await Promise.all([queryReg, queryKhusus]);
 
@@ -961,49 +961,36 @@ export default function App() {
             }
           }
 
-          // 3. Strict Check Kelompok Kelas & Jenjang Studi
+          // 3. Strict Check Kelompok Kelas (Kelompok Kelas matches class in KBM schedule table)
           const normActiveKelas = normalize(activeKelas);
-          const normActiveJenjang = normalize(activeJenjang);
           const rowKelasRaw = normalize(row.kelompok_kelas || row.kelas || row.sekolah);
-          const rowJenjangRaw = normalize(row.jenjang_studi || row.jenjang);
 
           if (normActiveKelas) {
-            // Student has a specific kelompok_kelas (e.g. "3 UTBK 2")
-            if (rowKelasRaw) {
-              const rowItems = rowKelasRaw.split(/[,;\/]+/).map(s => s.trim()).filter(Boolean);
-              const matchesClass = rowItems.some(item => {
-                if (item === normActiveKelas) return true;
-                if (item.includes(normActiveKelas) || normActiveKelas.includes(item)) {
-                  // Extract numbers to ensure class numbers match (e.g. "3 utbk 1" vs "3 utbk 2")
-                  const activeNums = normActiveKelas.match(/\d+/g) || [];
-                  const itemNums = item.match(/\d+/g) || [];
-                  if (activeNums.length > 0 && itemNums.length > 0) {
-                    const lastActive = activeNums[activeNums.length - 1];
-                    const lastItem = itemNums[itemNums.length - 1];
-                    if (activeNums.length === itemNums.length && lastActive !== lastItem) {
-                      return false;
-                    }
-                  }
-                  return true;
-                }
-                return false;
-              });
-
-              if (!matchesClass) {
-                return false; // Do not fall back to jenjang if kelompok_kelas is different!
-              }
-            } else if (rowJenjangRaw && normActiveJenjang) {
-              // If row does not specify a kelompok_kelas, fall back to checking jenjang_studi
-              if (rowJenjangRaw !== normActiveJenjang && !rowJenjangRaw.includes(normActiveJenjang) && !normActiveJenjang.includes(rowJenjangRaw)) {
-                return false;
-              }
-            }
-          } else if (normActiveJenjang) {
-            // Student has no kelompok_kelas, check jenjang_studi
-            if (rowJenjangRaw && rowJenjangRaw !== normActiveJenjang && !rowJenjangRaw.includes(normActiveJenjang) && !normActiveJenjang.includes(rowJenjangRaw)) {
+            if (!rowKelasRaw) {
               return false;
             }
-            if (rowKelasRaw && !rowKelasRaw.includes(normActiveJenjang) && !normActiveJenjang.includes(rowKelasRaw)) {
+            const rowItems = rowKelasRaw.split(/[,;\/]+/).map(s => s.trim()).filter(Boolean);
+            const matchesClass = rowItems.some(item => {
+              if (item === normActiveKelas) return true;
+              
+              const cleanActive = normActiveKelas.replace(/[^a-z0-9]/g, '');
+              const cleanItem = item.replace(/[^a-z0-9]/g, '');
+              
+              if (cleanItem === cleanActive) return true;
+
+              // Ensure grade number matches if present
+              const activeNums = normActiveKelas.match(/\d+/g) || [];
+              const itemNums = item.match(/\d+/g) || [];
+              if (activeNums.length > 0 && itemNums.length > 0) {
+                if (activeNums[0] !== itemNums[0]) {
+                  return false;
+                }
+              }
+
+              return cleanItem.includes(cleanActive) || cleanActive.includes(cleanItem);
+            });
+
+            if (!matchesClass) {
               return false;
             }
           }
@@ -1012,7 +999,6 @@ export default function App() {
           const rowSubjectRaw = row.mata_pelajaran || row.mapel || row.subject || row.nama_mapel || row.pelajaran;
           const rowSubject = normalize(rowSubjectRaw);
 
-          // Reject placeholder/empty subject rows
           if (!rowSubject || rowSubject === 'mata pelajaran' || rowSubject === '-') {
             return false;
           }
@@ -1028,8 +1014,10 @@ export default function App() {
           return true;
         };
 
-        const filteredRegSchedules = rawRegSchedules.filter((row: any) => isScheduleMatch(row, 'Reguler'));
-        const filteredKhususSchedules = rawKhususSchedules.filter((row: any) => isScheduleMatch(row, 'Khusus'));
+        let filteredRegSchedules = rawRegSchedules.filter((row: any) => isScheduleMatch(row, 'Reguler'));
+        let filteredKhususSchedules = rawKhususSchedules.filter((row: any) => isScheduleMatch(row, 'Khusus'));
+
+
 
         let mappedRegSchedules: RegularSchedule[] = filteredRegSchedules.map((row: any) => {
           const waktuStr = String(row.waktu || row.jam || row.time || '');
@@ -2127,8 +2115,8 @@ export default function App() {
                       <h3 className="text-xl font-black text-slate-800 dark:text-slate-200 leading-none">{(selectedStudentData || currentStudent)?.cabang || 'Semarang 2'}</h3>
                     </div>
                     <div className="text-right">
-                      <span className="text-[11px] font-extrabold text-slate-400 tracking-widest uppercase block mb-1 text-right">JENJANG STUDI</span>
-                      <h3 className="text-xl font-black text-red-600 leading-none">{(selectedStudentData || currentStudent)?.jenjang_studi || '2 SMA'}</h3>
+                      <span className="text-[11px] font-extrabold text-slate-400 tracking-widest uppercase block mb-1 text-right">KELOMPOK KELAS</span>
+                      <h3 className="text-xl font-black text-red-600 leading-none">{(selectedStudentData || currentStudent)?.kelompok_kelas || '2 IPS C'}</h3>
                     </div>
                   </div>
 
