@@ -901,6 +901,8 @@ export default function App() {
         // Match with the active student's profile data
         const activeCabang = (selectedStudentData?.cabang || currentStudent.cabang || '').trim();
         const activeKelas = (selectedStudentData?.kelompok_kelas || currentStudent.kelompok_kelas || '').trim();
+        const activeJenjang = (selectedStudentData?.jenjang_studi || currentStudent.jenjang_studi || '').trim();
+        const activeSekolah = (selectedStudentData?.asal_sekolah || currentStudent.asal_sekolah || '').trim();
         
         if (activeCabang) {
           queryReg = queryReg.ilike('cabang', `%${activeCabang}%`);
@@ -961,37 +963,65 @@ export default function App() {
             }
           }
 
-          // 3. Strict Check Kelompok Kelas (Kelompok Kelas matches class in KBM schedule table)
-          const normActiveKelas = normalize(activeKelas);
-          const rowKelasRaw = normalize(row.kelompok_kelas || row.kelas || row.sekolah);
-
-          if (normActiveKelas) {
-            if (!rowKelasRaw) {
-              return false;
-            }
-            const rowItems = rowKelasRaw.split(/[,;\/]+/).map(s => s.trim()).filter(Boolean);
-            const matchesClass = rowItems.some(item => {
-              if (item === normActiveKelas) return true;
-              
-              const cleanActive = normActiveKelas.replace(/[^a-z0-9]/g, '');
-              const cleanItem = item.replace(/[^a-z0-9]/g, '');
-              
-              if (cleanItem === cleanActive) return true;
-
-              // Ensure grade number matches if present
-              const activeNums = normActiveKelas.match(/\d+/g) || [];
-              const itemNums = item.match(/\d+/g) || [];
-              if (activeNums.length > 0 && itemNums.length > 0) {
-                if (activeNums[0] !== itemNums[0]) {
-                  return false;
-                }
+          if (targetJenis === 'Reguler') {
+            // 3. Strict Check Kelompok Kelas (Kelompok Kelas matches class in KBM schedule table)
+            const normActiveKelas = normalize(activeKelas);
+            const rowKelasRaw = normalize(row.kelompok_kelas || row.kelas || row.sekolah);
+  
+            if (normActiveKelas) {
+              if (!rowKelasRaw) {
+                return false;
               }
-
-              return cleanItem.includes(cleanActive) || cleanActive.includes(cleanItem);
-            });
-
-            if (!matchesClass) {
-              return false;
+              const rowItems = rowKelasRaw.split(/[,;\/]+/).map(s => s.trim()).filter(Boolean);
+              const matchesClass = rowItems.some(item => {
+                if (item === normActiveKelas) return true;
+                
+                const cleanActive = normActiveKelas.replace(/[^a-z0-9]/g, '');
+                const cleanItem = item.replace(/[^a-z0-9]/g, '');
+                
+                if (cleanItem === cleanActive) return true;
+  
+                // Ensure grade number matches if present
+                const activeNums = normActiveKelas.match(/\d+/g) || [];
+                const itemNums = item.match(/\d+/g) || [];
+                if (activeNums.length > 0 && itemNums.length > 0) {
+                  if (activeNums[0] !== itemNums[0]) {
+                    return false;
+                  }
+                }
+  
+                return cleanItem.includes(cleanActive) || cleanActive.includes(cleanItem);
+              });
+  
+              if (!matchesClass) {
+                return false;
+              }
+            }
+          } else {
+            // Khusus
+            // check Jenjang Studi
+            const normActiveJenjang = normalize(activeJenjang);
+            const rowJenjangRaw = normalize(row.jenjang_studi || row.jenjang);
+            
+            if (normActiveJenjang) {
+              if (!rowJenjangRaw || !rowJenjangRaw.includes(normActiveJenjang)) {
+                return false;
+              }
+            }
+            
+            // check Sekolah
+            const normActiveSekolah = normalize(activeSekolah);
+            const rowSekolahRaw = normalize(row.sekolah || row.asal_sekolah);
+            
+            if (normActiveSekolah) {
+              if (!rowSekolahRaw) {
+                return false;
+              }
+              const cleanActiveSekolah = normActiveSekolah.replace(/[^a-z0-9]/g, '');
+              const cleanRowSekolah = rowSekolahRaw.replace(/[^a-z0-9]/g, '');
+              if (!cleanRowSekolah.includes(cleanActiveSekolah) && !cleanActiveSekolah.includes(cleanRowSekolah)) {
+                return false;
+              }
             }
           }
 
@@ -1517,10 +1547,10 @@ export default function App() {
               className={`flex items-center transition duration-150 ${
                 isSidebarCollapsed ? 'justify-center p-3 rounded-xl' : 'gap-3 px-3 py-3 rounded-xl text-xs font-bold text-left'
               } ${activeTab === 'kbm-tambahan' ? 'bg-sky-600 text-white shadow-md shadow-sky-100' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-50'}`}
-              title={isSidebarCollapsed ? "Jadwal KBM Tambahan" : undefined}
+              title={isSidebarCollapsed ? "Jadwal KBM Khusus" : undefined}
             >
               <Clock className="h-4 w-4 shrink-0" />
-              {!isSidebarCollapsed && <span>Jadwal KBM Tambahan</span>}
+              {!isSidebarCollapsed && <span>Jadwal KBM Khusus</span>}
             </button>
 
             <button 
@@ -2142,7 +2172,7 @@ export default function App() {
                     <div className="flex flex-col items-center justify-center py-16 bg-slate-50/50 border border-slate-100 rounded-2xl text-center p-6">
                       <BookOpen className="h-10 w-10 text-slate-300 mb-2" />
                       <h4 className="text-sm font-bold text-slate-700 dark:text-slate-300">Tidak Ada Jadwal KBM</h4>
-                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-sm">Jadwal tidak ditemukan untuk Cabang, Jenjang Studi, dan Mata Pelajaran di profil siswa saat ini.</p>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-sm">Jadwal tidak ditemukan untuk Cabang, Kelompok Kelas, dan Mata Pelajaran di profil siswa saat ini.</p>
                     </div>
                   ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 pt-2">
@@ -2220,7 +2250,7 @@ export default function App() {
 
                 <div className="flex items-center justify-between border-b border-slate-100 pb-4 mb-6">
                   <div>
-                    <h3 className="text-base font-bold text-slate-900 dark:text-slate-100">Jadwal KBM Tambahan</h3>
+                    <h3 className="text-base font-bold text-slate-900 dark:text-slate-100">Jadwal KBM Khusus</h3>
                     <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Kelas bimbingan diluar jam KBM, pembinaan khusus, dan persiapan Tes</p>
                   </div>
                   <span className="bg-indigo-50 text-indigo-700 text-xs font-bold px-3 py-1.5 rounded-full border border-indigo-100 flex items-center gap-1">

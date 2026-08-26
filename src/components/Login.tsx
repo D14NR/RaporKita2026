@@ -340,7 +340,7 @@ export default function Login({ onLoginSuccess, useD1, dbStatus, onToggleDemoMod
               {matchedStudentName ? `Memuat Rapor: ${matchedStudentName}` : 'Mengambil Data Rapor Siswa'}
             </h3>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 font-medium">
-              Sedang menghubungkan ke Database Cloudflare D1 & menyingkronkan data...
+              Sedang menghubungkan ke Database & menyingkronkan data...
             </p>
 
             {/* Progress Bar */}
@@ -379,7 +379,7 @@ export default function Login({ onLoginSuccess, useD1, dbStatus, onToggleDemoMod
                   <div className="h-4 w-4 rounded-full border border-slate-300 shrink-0"></div>
                 )}
                 <span className={loadingStep >= 2 ? 'font-bold text-slate-800 dark:text-slate-200' : 'text-slate-400'}>
-                  2. Mengakses Tabel Database Cloudflare D1 (`data_siswa`)
+                  2. Mengakses Database (`data_siswa`)
                 </span>
               </div>
 
