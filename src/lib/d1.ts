@@ -1,4 +1,4 @@
-const DEFAULT_D1_API_URL = 'https://raporkita-db.dianrizkisofiawan0431.workers.dev';
+const DEFAULT_D1_API_URL = '/api/d1';
 
 const metaEnv = (import.meta as any).env || {};
 export const baseApiUrl = (() => {
@@ -80,8 +80,14 @@ function normalizeRecordShape(tableName: string, record: any): any {
     if (!normalized.nama && normalized.nama_siswa) {
       normalized.nama = normalized.nama_siswa;
     }
+    if (!normalized.nama_siswa && normalized.nama) {
+      normalized.nama_siswa = normalized.nama;
+    }
     if (!normalized.sub_bab && normalized.sub_bab_kode_soal) {
       normalized.sub_bab = normalized.sub_bab_kode_soal;
+    }
+    if (!normalized.sub_bab_kode_soal && normalized.sub_bab) {
+      normalized.sub_bab_kode_soal = normalized.sub_bab;
     }
   }
 
@@ -726,7 +732,7 @@ CREATE TABLE IF NOT EXISTS nilai_evaluasi (
     mata_pelajaran TEXT,
     sub_bab_kode_soal TEXT,
     nilai REAL CHECK (
-        nilai IS NULL OR (nilai >= 0 AND nilai <= 100)
+        nilai IS NULL OR (nilai >= 0 AND nilai <= 1000)
     ),
     cabang TEXT,
     created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),

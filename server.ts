@@ -13,6 +13,29 @@ async function startServer() {
   app.use(express.json());
 
   // API routes
+  app.use("/api/d1", async (req, res) => {
+    const d1Url = `https://raporkita-db.dianrizkisofiawan0431.workers.dev${req.url}`;
+    try {
+      const fetchOpts: RequestInit = {
+        method: req.method,
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': req.headers['content-type'] as string || 'application/json'
+        }
+      };
+      if (req.method !== 'GET' && req.method !== 'HEAD') {
+        fetchOpts.body = JSON.stringify(req.body);
+      }
+      
+      const response = await fetch(d1Url, fetchOpts);
+      const data = await response.text();
+      res.status(response.status).set('Content-Type', response.headers.get('content-type') || 'application/json').send(data);
+    } catch (error: any) {
+      console.error('D1 Proxy Error:', error);
+      res.status(500).json({ success: false, message: error.message });
+    }
+  });
+
   app.post("/api/analisa", async (req, res) => {
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   BookOpen, 
   Calendar, 
@@ -61,13 +61,14 @@ import { AnalisaView } from './components/AnalisaView';
 import { LeaveFormModal } from './components/LeaveFormModal';
 import { OutsideServiceFormModal } from './components/OutsideServiceFormModal';
 import { BookingServiceFormModal } from './components/BookingServiceFormModal';
-import { formatTanggalIndo, isThisOrNextMonth, isScheduleForToday, parseDateSafe, getTodayIndoString, getScheduleTimeStatus } from './lib/dateUtils';
+import { formatTanggalIndo, isThisOrNextMonth, isScheduleForToday, isScheduleFinished, parseDateSafe, getTodayIndoString, getScheduleTimeStatus, MONTHS_INDO } from './lib/dateUtils';
 import { SettingsModal } from './components/SettingsModal';
 import { NotificationModal } from './components/NotificationModal';
 import { UjiMateriView } from './components/UjiMateriView';
 import { UpdateCheckerModal } from './components/UpdateCheckerModal';
 import { ActiveScheduleAlert } from './components/ActiveScheduleAlert';
 import { requestNotificationPermission } from './lib/pushNotifications';
+import { formatScore, roundScore } from './lib/formatUtils';
 
 const APP_VERSION = '1.0.0';
 
@@ -379,6 +380,7 @@ export default function App() {
   const [regularSchedules, setRegularSchedules] = useState<RegularSchedule[]>([]);
   const [additionalSchedules, setAdditionalSchedules] = useState<AdditionalSchedule[]>([]);
   const [attendanceRecords, setAttendanceRecords] = useState<Attendance[]>([]);
+  const [attendanceMonthFilter, setAttendanceMonthFilter] = useState<string>('all');
   const [learningProgress, setLearningProgress] = useState<LearningProgress[]>([]);
   const [grades, setGrades] = useState<Grade[]>([]);
   const [nilaiEvaluasi, setNilaiEvaluasi] = useState<NilaiEvaluasi[]>([]);
@@ -694,8 +696,15 @@ export default function App() {
             rowsById.set(rowKey, row);
           }
 
+          const combined = Array.from(rowsById.values());
+          combined.sort((a, b) => {
+            const dateA = parseDateSafe(a.tanggal || a.created_at)?.getTime() || 0;
+            const dateB = parseDateSafe(b.tanggal || b.created_at)?.getTime() || 0;
+            return dateB - dateA;
+          });
+
           return {
-            data: Array.from(rowsById.values()),
+            data: combined,
             error: nisResult.error && siswaResult.error ? nisResult.error : null
           };
         };
@@ -732,8 +741,15 @@ export default function App() {
               });
             }
 
+            const combinedBookings = Array.from(mapById.values());
+            combinedBookings.sort((a, b) => {
+              const dateA = parseDateSafe(a.created_at)?.getTime() || 0;
+              const dateB = parseDateSafe(b.created_at)?.getTime() || 0;
+              return dateB - dateA;
+            });
+
             return { 
-              data: Array.from(mapById.values()), 
+              data: combinedBookings, 
               error: kbmBookingRes.error && mainBookingRes.error ? kbmBookingRes.error : null 
             };
           })()
@@ -1182,14 +1198,41 @@ export default function App() {
     }
   };
 
+  const availableAttendanceMonths = useMemo(() => {
+    const monthsMap = new Map<string, string>();
+    attendanceRecords.forEach(record => {
+      const d = parseDateSafe(record.date);
+      if (d) {
+        const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+        if (!monthsMap.has(ym)) {
+           const monthName = MONTHS_INDO[d.getMonth()];
+           monthsMap.set(ym, `${monthName} ${d.getFullYear()}`);
+        }
+      }
+    });
+    return Array.from(monthsMap.entries())
+      .sort((a, b) => b[0].localeCompare(a[0]))
+      .map(([value, label]) => ({ value, label }));
+  }, [attendanceRecords]);
+
+  const filteredAttendanceRecords = useMemo(() => {
+    if (attendanceMonthFilter === 'all') return attendanceRecords;
+    return attendanceRecords.filter(record => {
+      const d = parseDateSafe(record.date);
+      if (!d) return false;
+      const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      return ym === attendanceMonthFilter;
+    });
+  }, [attendanceRecords, attendanceMonthFilter]);
+
   // Helper for attendance stats
   const getAttendanceStats = () => {
-    if (!attendanceRecords || attendanceRecords.length === 0) return { percent: 100, hadir: 0, sakit: 0, izin: 0, alpa: 0 };
-    const total = attendanceRecords.length;
-    const hadir = attendanceRecords.filter(r => r.status === 'Hadir').length;
-    const sakit = attendanceRecords.filter(r => r.status === 'Sakit').length;
-    const izin = attendanceRecords.filter(r => r.status === 'Izin').length;
-    const alpa = attendanceRecords.filter(r => r.status === 'Alpa').length;
+    if (!filteredAttendanceRecords || filteredAttendanceRecords.length === 0) return { percent: 100, hadir: 0, sakit: 0, izin: 0, alpa: 0 };
+    const total = filteredAttendanceRecords.length;
+    const hadir = filteredAttendanceRecords.filter(r => r.status === 'Hadir').length;
+    const sakit = filteredAttendanceRecords.filter(r => r.status === 'Sakit').length;
+    const izin = filteredAttendanceRecords.filter(r => r.status === 'Izin').length;
+    const alpa = filteredAttendanceRecords.filter(r => r.status === 'Alpa').length;
     return {
       percent: Math.round((hadir / total) * 100),
       hadir,
@@ -1206,9 +1249,9 @@ export default function App() {
     nilaiStandar.forEach(s => { if (s.nilai != null) scores.push(Number(s.nilai)); });
 
     if (scores.length === 0) return { average: 0, highest: 0, lowest: 0, total: 0 };
-    const average = Math.round(scores.reduce((a, b) => a + b, 0) / scores.length);
-    const highest = Math.max(...scores);
-    const lowest = Math.min(...scores);
+    const average = roundScore(scores.reduce((a, b) => a + b, 0) / scores.length);
+    const highest = roundScore(Math.max(...scores));
+    const lowest = roundScore(Math.min(...scores));
     return {
       average,
       highest,
@@ -1219,6 +1262,46 @@ export default function App() {
 
   const attendanceStats = getAttendanceStats();
   const gradeStats = getGradeStats();
+
+  const groupedSnbt = useMemo(() => {
+    const map = new Map<string, {
+      tanggal: string;
+      jenis_tes: string;
+      subjects: { [key: string]: number };
+      total: number;
+      rerata: number;
+    }>();
+
+    nilaiSnbtUtbk.forEach(row => {
+      const key = `${row.tanggal}_${row.jenis_tes || 'SNBT'}`;
+      if (!map.has(key)) {
+        map.set(key, {
+          tanggal: row.tanggal,
+          jenis_tes: row.jenis_tes || 'SNBT',
+          subjects: {},
+          total: 0,
+          rerata: 0
+        });
+      }
+      const group = map.get(key)!;
+      if (row.mata_pelajaran && row.scor != null) {
+        const parsedScore = Number(row.scor);
+        group.subjects[row.mata_pelajaran] = isNaN(parsedScore) ? 0 : roundScore(parsedScore);
+      }
+    });
+
+    return Array.from(map.values()).map(group => {
+      const scores = Object.values(group.subjects);
+      const total = scores.reduce((a, b) => a + b, 0);
+      group.total = roundScore(total);
+      group.rerata = scores.length > 0 ? roundScore(total / scores.length) : 0;
+      return group;
+    }).sort((a, b) => {
+      const dateA = parseDateSafe(a.tanggal)?.getTime() || 0;
+      const dateB = parseDateSafe(b.tanggal)?.getTime() || 0;
+      return dateB - dateA;
+    });
+  }, [nilaiSnbtUtbk]);
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
@@ -1757,6 +1840,7 @@ export default function App() {
                         return todaySchedules.map((item, idx) => {
                           const timeStatus = getScheduleTimeStatus(item);
                           const isActive = timeStatus.isActiveNow;
+                          const isFinished = isScheduleFinished(item);
 
                           return (
                             <div key={idx} className={`flex items-center justify-between p-3 rounded-xl transition ${
@@ -1780,19 +1864,26 @@ export default function App() {
                                   )}
                                 </div>
                                 <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">{item.teacher}</p>
-                                <button
-                                  onClick={() => handleOpenLeaveModal({
-                                    subject: item.subject,
-                                    date: item.tanggal || getTodayIndoString(false),
-                                    time: `${item.time_start} - ${item.time_end}`,
-                                    teacher: item.teacher,
-                                    kelas: item.kelas || currentStudent?.kelompok_kelas
-                                  })}
-                                  className="mt-1.5 text-[10px] font-extrabold text-amber-700 hover:text-amber-800 bg-amber-50 hover:bg-amber-100 px-2 py-0.5 rounded-lg border border-amber-200/80 transition flex items-center gap-1 cursor-pointer"
-                                >
-                                  <FileText className="h-3 w-3 text-amber-600" />
-                                  Isi Izin/Sakit
-                                </button>
+                                {!isFinished ? (
+                                  <button
+                                    onClick={() => handleOpenLeaveModal({
+                                      subject: item.subject,
+                                      date: item.tanggal || getTodayIndoString(false),
+                                      time: `${item.time_start} - ${item.time_end}`,
+                                      teacher: item.teacher,
+                                      kelas: item.kelas || currentStudent?.kelompok_kelas
+                                    })}
+                                    className="mt-1.5 text-[10px] font-extrabold text-amber-700 hover:text-amber-800 bg-amber-50 hover:bg-amber-100 px-2 py-0.5 rounded-lg border border-amber-200/80 transition flex items-center gap-1 cursor-pointer"
+                                  >
+                                    <FileText className="h-3 w-3 text-amber-600" />
+                                    Isi Izin/Sakit
+                                  </button>
+                                ) : (
+                                  <span className="mt-1.5 inline-flex items-center gap-1 text-[10px] font-bold text-slate-400 dark:text-slate-500 bg-slate-100 dark:bg-slate-700/50 px-2 py-0.5 rounded-md">
+                                    <CheckCircle className="h-2.5 w-2.5 text-slate-400" />
+                                    KBM Selesai
+                                  </span>
+                                )}
                               </div>
                               <div className="text-right flex flex-col items-end">
                                 <span className={`text-[10px] font-bold px-2 py-1 rounded-md flex items-center gap-1 ${
@@ -2020,14 +2111,14 @@ export default function App() {
                         <div key={idx} className="space-y-1">
                           <div className="flex justify-between items-center text-xs">
                             <span className="font-bold text-slate-700 dark:text-slate-300">{item.mata_pelajaran} <span className="font-normal text-slate-400">({item.sub_bab_kode_soal || 'Evaluasi'})</span></span>
-                            <span className="font-black text-slate-900 dark:text-slate-100">{item.nilai}</span>
+                            <span className="font-black text-slate-900 dark:text-slate-100">{formatScore(item.nilai)}</span>
                           </div>
                           <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
                             <div 
                               className={`h-full rounded-full ${
-                                item.nilai >= 90 ? 'bg-emerald-500' : item.nilai >= 80 ? 'bg-sky-500' : 'bg-amber-400'
+                                Number(item.nilai) >= 90 ? 'bg-emerald-500' : Number(item.nilai) >= 80 ? 'bg-sky-500' : 'bg-amber-400'
                               }`} 
-                              style={{ width: `${item.nilai}%` }}
+                              style={{ width: `${Math.min(100, Math.max(0, Number(item.nilai) || 0))}%` }}
                             ></div>
                           </div>
                         </div>
@@ -2200,20 +2291,36 @@ export default function App() {
                                   <h5 className="text-[13px] font-black text-slate-800 dark:text-slate-200 leading-snug uppercase break-words">
                                     {item.subject}
                                   </h5>
-                                  <div className="flex items-center justify-end pt-2.5 border-t border-slate-100 mt-1">
-                                    <button
-                                      onClick={() => handleOpenLeaveModal({
-                                        subject: item.subject,
-                                        date: item.tanggal,
-                                        time: `${item.time_start} - ${item.time_end}`,
-                                        teacher: item.teacher,
-                                        kelas: item.kelas || currentStudent?.kelompok_kelas
-                                      })}
-                                      className="text-[10px] font-extrabold text-amber-700 hover:text-amber-800 bg-amber-50 hover:bg-amber-100 px-2.5 py-1 rounded-lg border border-amber-200/80 transition flex items-center gap-1 shrink-0 cursor-pointer"
-                                    >
-                                      <FileText className="h-3 w-3 text-amber-600" />
-                                      Form Izin/Sakit
-                                    </button>
+                                  <div className="flex items-center justify-end pt-2.5 border-t border-slate-100 dark:border-slate-700 mt-1">
+                                    {(() => {
+                                      const isFinished = isScheduleFinished({
+                                        ...item,
+                                        tanggal: item.tanggal || (dateKey !== 'No Date' ? dateKey : undefined)
+                                      });
+                                      if (isFinished) {
+                                        return (
+                                          <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 bg-slate-100 dark:bg-slate-700/50 px-2.5 py-1 rounded-lg flex items-center gap-1">
+                                            <CheckCircle className="h-3 w-3 text-slate-400" />
+                                            KBM Selesai
+                                          </span>
+                                        );
+                                      }
+                                      return (
+                                        <button
+                                          onClick={() => handleOpenLeaveModal({
+                                            subject: item.subject,
+                                            date: item.tanggal || (dateKey !== 'No Date' ? dateKey : undefined),
+                                            time: `${item.time_start} - ${item.time_end}`,
+                                            teacher: item.teacher,
+                                            kelas: item.kelas || currentStudent?.kelompok_kelas
+                                          })}
+                                          className="text-[10px] font-extrabold text-amber-700 hover:text-amber-800 bg-amber-50 hover:bg-amber-100 px-2.5 py-1 rounded-lg border border-amber-200/80 transition flex items-center gap-1 shrink-0 cursor-pointer"
+                                        >
+                                          <FileText className="h-3 w-3 text-amber-600" />
+                                          Form Izin/Sakit
+                                        </button>
+                                      );
+                                    })()}
                                   </div>
                                 </div>
                               ))}
@@ -2281,24 +2388,37 @@ export default function App() {
                         <p className="text-xs text-slate-500 dark:text-slate-400">Kelas: {item.kelas || '-'}</p>
                         <p className="text-xs text-slate-500 dark:text-slate-400">Tanggal: {item.tanggal ? formatTanggalIndo(item.tanggal, { withDayName: true }) : '-'}</p>
                         
-                        <div className="mt-3 pt-3 border-t border-slate-200/60 flex items-center justify-between gap-2">
+                        <div className="mt-3 pt-3 border-t border-slate-200/60 dark:border-slate-700/60 flex items-center justify-between gap-2">
                           <div className="flex items-center text-xs text-slate-500 dark:text-slate-400 font-bold">
                             <Clock className="h-4 w-4 text-sky-600 mr-1.5 shrink-0" />
                             {item.time_start} - {item.time_end} WIB
                           </div>
-                          <button
-                            onClick={() => handleOpenLeaveModal({
-                              subject: item.subject,
-                              date: item.tanggal,
-                              time: `${item.time_start} - ${item.time_end}`,
-                              teacher: item.teacher,
-                              kelas: item.kelas
-                            })}
-                            className="text-[10px] font-extrabold text-amber-700 hover:text-amber-800 bg-amber-50 hover:bg-amber-100 px-2.5 py-1 rounded-lg border border-amber-200/80 transition flex items-center gap-1 shrink-0"
-                          >
-                            <FileText className="h-3 w-3 text-amber-600" />
-                            Form Izin/Sakit
-                          </button>
+                          {(() => {
+                            const isFinished = isScheduleFinished(item);
+                            if (isFinished) {
+                              return (
+                                <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 bg-slate-100 dark:bg-slate-700/50 px-2.5 py-1 rounded-lg flex items-center gap-1">
+                                  <CheckCircle className="h-3 w-3 text-slate-400" />
+                                  KBM Selesai
+                                </span>
+                              );
+                            }
+                            return (
+                              <button
+                                onClick={() => handleOpenLeaveModal({
+                                  subject: item.subject,
+                                  date: item.tanggal,
+                                  time: `${item.time_start} - ${item.time_end}`,
+                                  teacher: item.teacher,
+                                  kelas: item.kelas
+                                })}
+                                className="text-[10px] font-extrabold text-amber-700 hover:text-amber-800 bg-amber-50 hover:bg-amber-100 px-2.5 py-1 rounded-lg border border-amber-200/80 transition flex items-center gap-1 shrink-0 cursor-pointer"
+                              >
+                                <FileText className="h-3 w-3 text-amber-600" />
+                                Form Izin/Sakit
+                              </button>
+                            );
+                          })()}
                         </div>
                       </div>
                     </div>
@@ -2320,93 +2440,152 @@ export default function App() {
               
               {/* Presensi stats widgets */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs">
-                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Hadir</span>
-                  <div className="flex items-baseline gap-1 mt-1">
-                    <span className="text-xl font-black text-emerald-600">{attendanceStats.hadir}</span>
-                    <span className="text-xs text-slate-400">hari</span>
+                <div className="bg-emerald-50/50 p-5 rounded-3xl border border-emerald-100 shadow-sm flex flex-col justify-between transition-all hover:shadow-md">
+                  <div className="flex justify-between items-start mb-4">
+                    <span className="text-[11px] font-black text-emerald-600/80 uppercase tracking-widest">Hadir</span>
+                    <div className="p-2.5 bg-emerald-100/80 rounded-xl">
+                      <CheckCircle className="h-4 w-4 text-emerald-600" />
+                    </div>
+                  </div>
+                  <div className="flex items-baseline gap-1.5">
+                    <span className="text-3xl font-black text-emerald-700 tracking-tight">{attendanceStats.hadir}</span>
+                    <span className="text-xs font-bold text-emerald-600/70">hari</span>
                   </div>
                 </div>
-                <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs">
-                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Sakit</span>
-                  <div className="flex items-baseline gap-1 mt-1">
-                    <span className="text-xl font-black text-blue-600">{attendanceStats.sakit}</span>
-                    <span className="text-xs text-slate-400">hari</span>
+                <div className="bg-blue-50/50 p-5 rounded-3xl border border-blue-100 shadow-sm flex flex-col justify-between transition-all hover:shadow-md">
+                  <div className="flex justify-between items-start mb-4">
+                    <span className="text-[11px] font-black text-blue-600/80 uppercase tracking-widest">Sakit</span>
+                    <div className="p-2.5 bg-blue-100/80 rounded-xl">
+                      <HeartHandshake className="h-4 w-4 text-blue-600" />
+                    </div>
+                  </div>
+                  <div className="flex items-baseline gap-1.5">
+                    <span className="text-3xl font-black text-blue-700 tracking-tight">{attendanceStats.sakit}</span>
+                    <span className="text-xs font-bold text-blue-600/70">hari</span>
                   </div>
                 </div>
-                <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs">
-                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Izin</span>
-                  <div className="flex items-baseline gap-1 mt-1">
-                    <span className="text-xl font-black text-amber-500">{attendanceStats.izin}</span>
-                    <span className="text-xs text-slate-400">hari</span>
+                <div className="bg-amber-50/50 p-5 rounded-3xl border border-amber-100 shadow-sm flex flex-col justify-between transition-all hover:shadow-md">
+                  <div className="flex justify-between items-start mb-4">
+                    <span className="text-[11px] font-black text-amber-600/80 uppercase tracking-widest">Izin</span>
+                    <div className="p-2.5 bg-amber-100/80 rounded-xl">
+                      <ClipboardList className="h-4 w-4 text-amber-600" />
+                    </div>
+                  </div>
+                  <div className="flex items-baseline gap-1.5">
+                    <span className="text-3xl font-black text-amber-700 tracking-tight">{attendanceStats.izin}</span>
+                    <span className="text-xs font-bold text-amber-600/70">hari</span>
                   </div>
                 </div>
-                <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs">
-                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Alpa</span>
-                  <div className="flex items-baseline gap-1 mt-1">
-                    <span className="text-xl font-black text-rose-500">{attendanceStats.alpa}</span>
-                    <span className="text-xs text-slate-400">hari</span>
+                <div className="bg-rose-50/50 p-5 rounded-3xl border border-rose-100 shadow-sm flex flex-col justify-between transition-all hover:shadow-md">
+                  <div className="flex justify-between items-start mb-4">
+                    <span className="text-[11px] font-black text-rose-600/80 uppercase tracking-widest">Alpa</span>
+                    <div className="p-2.5 bg-rose-100/80 rounded-xl">
+                      <AlertCircle className="h-4 w-4 text-rose-600" />
+                    </div>
+                  </div>
+                  <div className="flex items-baseline gap-1.5">
+                    <span className="text-3xl font-black text-rose-700 tracking-tight">{attendanceStats.alpa}</span>
+                    <span className="text-xs font-bold text-rose-600/70">hari</span>
                   </div>
                 </div>
               </div>
 
               {/* Records Card */}
-              <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs p-4 sm:p-6">
-                <div className="flex justify-between items-center mb-4">
-                  <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest">Tren Kehadiran</h4>
-                  <button
-                    onClick={() => setShowChartPresensi(!showChartPresensi)}
-                    className="text-xs font-bold text-sky-600 hover:text-sky-700 bg-sky-50 px-3 py-1 rounded-full transition"
-                  >
-                    {showChartPresensi ? 'Sembunyikan Grafik' : 'Tampilkan Grafik'}
-                  </button>
-                </div>
-                {showChartPresensi && (
-                  <AttendancePieChart data={attendanceRecords} />
-                )}
-                <div className="flex items-center justify-between border-b border-slate-100 pb-4 mb-4">
+              <div className="bg-white rounded-3xl border border-slate-200/70 shadow-sm overflow-hidden">
+                <div className="p-5 sm:p-7 border-b border-slate-100 bg-slate-50/30 flex flex-col sm:flex-row sm:items-center justify-between gap-5">
                   <div>
-                    <h3 className="text-base font-bold text-slate-900 dark:text-slate-100">Log Presensi Detail</h3>
-                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Daftar kehadiran siswa di kelas secara real-time</p>
+                    <h3 className="text-lg font-black text-slate-900 tracking-tight">Log Presensi Detail</h3>
+                    <p className="text-sm text-slate-500 mt-1.5 font-medium">Daftar kehadiran siswa di kelas secara real-time</p>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-3">
+                    {availableAttendanceMonths.length > 0 && (
+                      <div className="relative">
+                        <select
+                          value={attendanceMonthFilter}
+                          onChange={(e) => setAttendanceMonthFilter(e.target.value)}
+                          className="appearance-none text-xs font-bold border-2 border-slate-200 rounded-xl px-4 py-2.5 pr-9 bg-white text-slate-700 focus:outline-none focus:border-sky-500 focus:ring-4 focus:ring-sky-500/10 cursor-pointer transition-all hover:border-slate-300 w-full sm:w-auto"
+                        >
+                          <option value="all">Semua Bulan</option>
+                          {availableAttendanceMonths.map(month => (
+                            <option key={month.value} value={month.value}>{month.label}</option>
+                          ))}
+                        </select>
+                        <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-slate-400">
+                          <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path></svg>
+                        </div>
+                      </div>
+                    )}
+                    <button
+                      onClick={() => setShowChartPresensi(!showChartPresensi)}
+                      className={`text-xs font-bold px-5 py-2.5 rounded-xl transition-all duration-200 flex items-center gap-2 border-2 ${
+                        showChartPresensi 
+                          ? 'bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200' 
+                          : 'bg-sky-50 text-sky-700 border-sky-100 hover:bg-sky-100'
+                      }`}
+                    >
+                      {showChartPresensi ? 'Tutup Grafik' : 'Lihat Tren Grafik'}
+                    </button>
                   </div>
                 </div>
 
+                {showChartPresensi && (
+                  <div className="p-6 bg-slate-50/50 border-b border-slate-100 animate-in slide-in-from-top-4 fade-in duration-300">
+                    <AttendancePieChart data={filteredAttendanceRecords} />
+                  </div>
+                )}
+
                 <div className="overflow-x-auto">
-                  <table className="w-full text-left text-xs border-collapse">
+                  <table className="w-full text-left text-sm border-collapse">
                     <thead>
-                      <tr className="border-b border-slate-200 text-slate-400 uppercase font-black tracking-wider text-[10px]">
-                        <th className="py-3 px-4">Tanggal</th>
-                        <th className="py-3 px-4">Mata Pelajaran</th>
-                        <th className="py-3 px-4">Status Kehadiran</th>
-                        <th className="py-3 px-4">Catatan Guru</th>
+                      <tr className="bg-white border-b border-slate-100 text-slate-400 font-bold text-[11px] uppercase tracking-widest">
+                        <th className="py-5 px-6 font-bold">Tanggal</th>
+                        <th className="py-5 px-6 font-bold">Mata Pelajaran</th>
+                        <th className="py-5 px-6 font-bold text-center">Status</th>
+                        <th className="py-5 px-6 font-bold">Catatan Guru</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {attendanceRecords.map((item, idx) => (
-                        <tr key={idx} className="hover:bg-slate-50 transition duration-150">
-                          <td className="py-3.5 px-4 font-bold text-slate-800 dark:text-slate-200">{formatTanggalIndo(item.date, { withDayName: true })}</td>
-                          <td className="py-3.5 px-4">
-                            <span className="font-semibold text-slate-700 dark:text-slate-300">{item.subject || 'Seluruh Kelas'}</span>
+                    <tbody className="divide-y divide-slate-100/80 bg-white">
+                      {filteredAttendanceRecords.map((item, idx) => (
+                        <tr key={idx} className="hover:bg-slate-50/80 transition duration-200 group">
+                          <td className="py-4 px-6 font-bold text-slate-800 whitespace-nowrap">
+                            {formatTanggalIndo(item.date, { withDayName: true })}
                           </td>
-                          <td className="py-3.5 px-4">
-                            <span className={`inline-block px-2.5 py-0.5 rounded-full text-[10px] font-black ${
+                          <td className="py-4 px-6">
+                            <span className="font-semibold text-slate-700">{item.subject || 'Seluruh Kelas'}</span>
+                          </td>
+                          <td className="py-4 px-6 text-center">
+                            <span className={`inline-flex items-center justify-center px-3.5 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest border ${
                               item.status === 'Hadir' 
-                                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' 
+                                ? 'bg-emerald-50/80 text-emerald-700 border-emerald-200/60 shadow-[0_1px_2px_rgba(16,185,129,0.05)]' 
                                 : item.status === 'Sakit'
-                                ? 'bg-blue-50 text-blue-700 border border-blue-200'
+                                ? 'bg-blue-50/80 text-blue-700 border-blue-200/60 shadow-[0_1px_2px_rgba(59,130,246,0.05)]'
                                 : item.status === 'Izin'
-                                ? 'bg-amber-50 text-amber-700 border border-amber-200'
-                                : 'bg-rose-50 text-rose-700 border border-rose-200'
+                                ? 'bg-amber-50/80 text-amber-700 border-amber-200/60 shadow-[0_1px_2px_rgba(245,158,11,0.05)]'
+                                : 'bg-rose-50/80 text-rose-700 border-rose-200/60 shadow-[0_1px_2px_rgba(244,63,94,0.05)]'
                             }`}>
                               {item.status}
                             </span>
                           </td>
-                          <td className="py-3.5 px-4 text-slate-500 dark:text-slate-400 italic">"{item.notes || '-'}"</td>
+                          <td className="py-4 px-6 text-slate-500 font-medium text-[13px]">
+                            {item.notes ? (
+                              <span className="italic">"{item.notes}"</span>
+                            ) : (
+                              <span className="text-slate-300 not-italic">-</span>
+                            )}
+                          </td>
                         </tr>
                       ))}
-                      {attendanceRecords.length === 0 && (
+                      {filteredAttendanceRecords.length === 0 && (
                         <tr>
-                          <td colSpan={4} className="py-12 text-center text-slate-500 dark:text-slate-400 italic">Belum ada riwayat kehadiran terdaftar.</td>
+                          <td colSpan={4} className="py-20 text-center">
+                            <div className="flex flex-col items-center justify-center space-y-3">
+                              <div className="bg-slate-50 p-4 rounded-full mb-2">
+                                <ClipboardList className="h-8 w-8 text-slate-400" />
+                              </div>
+                              <h4 className="text-slate-700 font-bold">Data Kosong</h4>
+                              <p className="text-slate-500 font-medium text-sm">Belum ada riwayat kehadiran terdaftar untuk rentang waktu ini.</p>
+                            </div>
+                          </td>
                         </tr>
                       )}
                     </tbody>
@@ -2497,17 +2676,17 @@ export default function App() {
               <div className="grid grid-cols-3 gap-2 sm:gap-4">
                 <div className="bg-white p-3 sm:p-5 rounded-2xl border border-slate-200/80 shadow-sm text-center flex flex-col justify-center">
                   <span className="text-[9px] sm:text-xs font-bold text-slate-400 uppercase leading-tight line-clamp-1">Rata-rata</span>
-                  <h3 className="text-xl sm:text-3xl font-black text-sky-600 mt-0.5 sm:mt-1">{gradeStats.average || 0}</h3>
+                  <h3 className="text-xl sm:text-3xl font-black text-sky-600 mt-0.5 sm:mt-1">{formatScore(gradeStats.average)}</h3>
                   <p className="hidden sm:block text-[10px] text-slate-400 mt-1">Berdasarkan {gradeStats.total} entri nilai regular</p>
                 </div>
                 <div className="bg-white p-3 sm:p-5 rounded-2xl border border-slate-200/80 shadow-sm text-center flex flex-col justify-center">
                   <span className="text-[9px] sm:text-xs font-bold text-slate-400 uppercase leading-tight line-clamp-1">Tertinggi</span>
-                  <h3 className="text-xl sm:text-3xl font-black text-emerald-600 mt-0.5 sm:mt-1">{gradeStats.highest || 0}</h3>
+                  <h3 className="text-xl sm:text-3xl font-black text-emerald-600 mt-0.5 sm:mt-1">{formatScore(gradeStats.highest)}</h3>
                   <p className="hidden sm:block text-[10px] text-slate-400 mt-1">Sangat memuaskan</p>
                 </div>
                 <div className="bg-white p-3 sm:p-5 rounded-2xl border border-slate-200/80 shadow-sm text-center flex flex-col justify-center">
                   <span className="text-[9px] sm:text-xs font-bold text-slate-400 uppercase leading-tight line-clamp-1">Terendah</span>
-                  <h3 className="text-xl sm:text-3xl font-black text-amber-500 mt-0.5 sm:mt-1">{gradeStats.lowest || 0}</h3>
+                  <h3 className="text-xl sm:text-3xl font-black text-amber-500 mt-0.5 sm:mt-1">{formatScore(gradeStats.lowest)}</h3>
                   <p className="hidden sm:block text-[10px] text-slate-400 mt-1">Standar KKM: 75</p>
                 </div>
               </div>
@@ -2534,7 +2713,7 @@ export default function App() {
                       : 'text-slate-600 hover:text-slate-900 dark:text-slate-100 hover:bg-slate-50'
                   }`}
                 >
-                  Nilai Standar / Rapor
+                  Nilai Standar / Bulanan
                 </button>
                 {['1 SMA', '2 SMA', '3 SMA'].includes(currentStudent?.jenjang_studi || '') && (
                   <button
@@ -2576,17 +2755,38 @@ export default function App() {
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {nilaiEvaluasi.map((item, idx) => (
-                      <div key={idx} className="bg-slate-50 border border-slate-100 p-4 rounded-2xl hover:shadow-xs transition duration-150 flex justify-between items-start">
-                        <div className="space-y-1">
-                          <span className="text-[10px] bg-slate-200/60 text-slate-500 dark:text-slate-400 font-bold px-2 py-0.5 rounded-md">{formatTanggalIndo(item.tanggal)}</span>
-                          <h4 className="text-sm font-black text-slate-800 dark:text-slate-200 mt-1">{item.mata_pelajaran}</h4>
-                          <p className="text-xs text-slate-500">Materi: <strong className="font-semibold text-slate-700 dark:text-slate-300">{item.sub_bab_kode_soal || 'Evaluasi'}</strong></p>
+                      <div key={idx} className="bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-700/60 p-4 rounded-2xl hover:shadow-xs transition duration-150 flex justify-between items-start gap-3">
+                        <div className="space-y-1.5 flex-1 min-w-0">
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <span className="text-[10px] bg-slate-200/70 dark:bg-slate-700 text-slate-600 dark:text-slate-300 font-bold px-2 py-0.5 rounded-md">
+                              {formatTanggalIndo(item.tanggal)}
+                            </span>
+                            {item.cabang && (
+                              <span className="text-[10px] bg-sky-50 dark:bg-sky-950/40 text-sky-700 dark:text-sky-300 font-medium px-2 py-0.5 rounded-md border border-sky-100 dark:border-sky-900/40">
+                                {item.cabang}
+                              </span>
+                            )}
+                            {item.jenjang_studi && (
+                              <span className="text-[10px] bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 font-medium px-2 py-0.5 rounded-md border border-indigo-100 dark:border-indigo-900/40">
+                                {item.jenjang_studi}
+                              </span>
+                            )}
+                          </div>
+                          <h4 className="text-sm font-black text-slate-800 dark:text-slate-100 mt-1 truncate">{item.mata_pelajaran}</h4>
+                          <p className="text-xs text-slate-600 dark:text-slate-400">
+                            Materi/Kode Soal: <strong className="font-semibold text-slate-800 dark:text-slate-200">{item.sub_bab_kode_soal || item.sub_bab || 'Evaluasi Harian'}</strong>
+                          </p>
+                          {(item.nama_pengajar || item.kode_pengajar) && (
+                            <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                              Pengajar: <span className="font-medium text-slate-700 dark:text-slate-300">{item.nama_pengajar || '-'}{item.kode_pengajar ? ` (${item.kode_pengajar})` : ''}</span>
+                            </p>
+                          )}
                         </div>
-                        <div className="text-right">
-                          <span className={`text-lg font-black px-3 py-1.5 rounded-xl block ${
-                            item.nilai >= 90 ? 'bg-emerald-50 text-emerald-600 border border-emerald-200' : 'bg-sky-50 text-sky-600 border border-sky-200'
+                        <div className="text-right shrink-0">
+                          <span className={`text-lg font-black px-3 py-1.5 rounded-xl block shadow-2xs ${
+                            Number(item.nilai) >= 90 ? 'bg-emerald-50 text-emerald-600 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-400 dark:border-emerald-800' : 'bg-sky-50 text-sky-600 border border-sky-200 dark:bg-sky-950/40 dark:text-sky-400 dark:border-sky-800'
                           }`}>
-                            {item.nilai}
+                            {formatScore(item.nilai)}
                           </span>
                         </div>
                       </div>
@@ -2598,7 +2798,7 @@ export default function App() {
                 </div>
               )}
 
-              {/* Sub-Tab 2: Nilai Standar / Rapor */}
+              {/* Sub-Tab 2: Nilai Standar / Bulanan */}
               {gradeSubTab === 'standar' && (
                 <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs p-4 sm:p-6 space-y-4">
                   <div className="flex items-center justify-between border-b border-slate-100 pb-4 mb-2">
@@ -2641,12 +2841,12 @@ export default function App() {
                                 {item.jenis_tes}
                               </span>
                             </td>
-                            <td className="py-3.5 px-4 text-right text-sm font-black text-slate-900 dark:text-slate-100">{item.nilai}</td>
+                            <td className="py-3.5 px-4 text-right text-sm font-black text-slate-900 dark:text-slate-100">{formatScore(item.nilai)}</td>
                           </tr>
                         ))}
                         {nilaiStandar.length === 0 && (
                           <tr>
-                            <td colSpan={4} className="py-12 text-center text-slate-500 dark:text-slate-400 italic">Belum ada data nilai standar / rapor terdaftar.</td>
+                            <td colSpan={4} className="py-12 text-center text-slate-500 dark:text-slate-400 italic">Belum ada data nilai standar / Bulanan terdaftar.</td>
                           </tr>
                         )}
                       </tbody>
@@ -2668,10 +2868,10 @@ export default function App() {
                         {showChartNilai ? 'Sembunyikan Grafik' : 'Tampilkan Grafik'}
                       </button>
                     </div>
-                    {showChartNilai && <SubjectBarChart data={nilaiSnbtUtbk.map(r => ({ mata_pelajaran: r.jenis_tes, nilai: r.rerata }))} title="Rata-rata Nilai per Jenis Tes" xKey="mata_pelajaran" yKey="nilai" />}
+                    {showChartNilai && <SubjectBarChart data={groupedSnbt.map(r => ({ mata_pelajaran: r.jenis_tes, nilai: r.rerata }))} title="Rata-rata Nilai per Jenis Tes" xKey="mata_pelajaran" yKey="nilai" />}
                   </div>
 
-                  {nilaiSnbtUtbk.map((item, idx) => (
+                  {groupedSnbt.map((item, idx) => (
                     <div key={idx} className="bg-white rounded-2xl border border-slate-200/80 shadow-xs p-4 sm:p-6 space-y-6">
                       <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-100 pb-4 gap-4">
                         <div>
@@ -2688,11 +2888,11 @@ export default function App() {
                         <div className="flex items-center gap-4">
                           <div className="text-center bg-sky-50 border border-sky-100 p-3 rounded-xl min-w-[90px]">
                             <span className="text-[10px] font-bold text-slate-400 uppercase">Rata-rata</span>
-                            <div className="text-lg font-black text-sky-700">{item.rerata}</div>
+                            <div className="text-lg font-black text-sky-700">{formatScore(item.rerata)}</div>
                           </div>
                           <div className="text-center bg-emerald-50 border border-emerald-100 p-3 rounded-xl min-w-[90px]">
                             <span className="text-[10px] font-bold text-slate-400 uppercase">Skor Total</span>
-                            <div className="text-lg font-black text-emerald-700">{item.total}</div>
+                            <div className="text-lg font-black text-emerald-700">{formatScore(item.total)}</div>
                           </div>
                         </div>
                       </div>
@@ -2701,34 +2901,20 @@ export default function App() {
                       <div>
                         <h4 className="text-xs font-extrabold text-slate-400 uppercase tracking-wider mb-4">Rincian Sub-Tes Potensi & Literasi</h4>
                         <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
-                          <div className="bg-slate-50 p-3 rounded-xl border border-slate-100 text-center">
-                            <div className="text-[10px] font-extrabold text-slate-400 uppercase" title="Penalaran Umum">PU</div>
-                            <div className="text-base font-black text-slate-800 dark:text-slate-200 mt-1">{item.pu || 0}</div>
-                          </div>
-                          <div className="bg-slate-50 p-3 rounded-xl border border-slate-100 text-center">
-                            <div className="text-[10px] font-extrabold text-slate-400 uppercase" title="Pengetahuan & Pemahaman Umum">PPU</div>
-                            <div className="text-base font-black text-slate-800 dark:text-slate-200 mt-1">{item.ppu || 0}</div>
-                          </div>
-                          <div className="bg-slate-50 p-3 rounded-xl border border-slate-100 text-center">
-                            <div className="text-[10px] font-extrabold text-slate-400 uppercase" title="Pemahaman Bacaan & Menulis">PBM</div>
-                            <div className="text-base font-black text-slate-800 dark:text-slate-200 mt-1">{item.pbm || 0}</div>
-                          </div>
-                          <div className="bg-slate-50 p-3 rounded-xl border border-slate-100 text-center">
-                            <div className="text-[10px] font-extrabold text-slate-400 uppercase" title="Pengetahuan Kuantitatif">PK</div>
-                            <div className="text-base font-black text-slate-800 dark:text-slate-200 mt-1">{item.pk || 0}</div>
-                          </div>
-                          <div className="bg-slate-50 p-3 rounded-xl border border-slate-100 text-center">
-                            <div className="text-[10px] font-extrabold text-slate-400 uppercase" title="Literasi Bahasa Indonesia">L-Ind</div>
-                            <div className="text-base font-black text-slate-800 dark:text-slate-200 mt-1">{item.lib || 0}</div>
-                          </div>
-                          <div className="bg-slate-50 p-3 rounded-xl border border-slate-100 text-center">
-                            <div className="text-[10px] font-extrabold text-slate-400 uppercase" title="Literasi Bahasa Inggris">L-Ing</div>
-                            <div className="text-base font-black text-slate-800 dark:text-slate-200 mt-1">{item.ling || 0}</div>
-                          </div>
-                          <div className="bg-slate-50 p-3 rounded-xl border border-slate-100 text-center">
-                            <div className="text-[10px] font-extrabold text-slate-400 uppercase" title="Penalaran Matematika">PM</div>
-                            <div className="text-base font-black text-slate-800 dark:text-slate-200 mt-1">{item.pm || 0}</div>
-                          </div>
+                          {Object.entries(item.subjects).length > 0 ? (
+                            Object.entries(item.subjects).map(([subject, score], sIdx) => (
+                              <div key={sIdx} className="bg-slate-50 p-3 rounded-xl border border-slate-100 text-center flex flex-col justify-between">
+                                <div className="text-[10px] font-extrabold text-slate-400 uppercase leading-snug line-clamp-2" title={subject}>
+                                  {subject}
+                                </div>
+                                <div className="text-base font-black text-slate-800 dark:text-slate-200 mt-1">{formatScore(score)}</div>
+                              </div>
+                            ))
+                          ) : (
+                            <div className="col-span-full text-center text-slate-400 text-xs italic py-2">
+                              Belum ada nilai rincian mata pelajaran
+                            </div>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -2739,7 +2925,7 @@ export default function App() {
                     <p className="text-xs text-slate-500 dark:text-slate-400 font-medium text-center sm:text-left">Lacak perkembangan kesiapan SNBT & UTBK siswa secara terukur dengan simulasi Try Out berkala.</p>
                   </div>
 
-                  {nilaiSnbtUtbk.length === 0 && (
+                  {groupedSnbt.length === 0 && (
                     <div className="bg-white border border-slate-100 rounded-2xl py-12 text-center text-slate-500 dark:text-slate-400 italic">Belum ada riwayat hasil simulasi UTBK terdaftar.</div>
                   )}
                 </div>

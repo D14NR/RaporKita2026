@@ -106,23 +106,16 @@ export interface NilaiEvaluasi {
 
 export interface NilaiSnbtUtbk {
   id: string;
-  nis: string;
-  nama: string;
+  siswa_id?: string;
+  nis?: string;
+  nama_siswa?: string;
   tanggal: string;
-  jenis_tes: string;
-  pu?: number; // Penalaran Umum
-  ppu?: number; // Pengetahuan & Pemahaman Umum
-  pbm?: number; // Pemahaman Bacaan & Menulis
-  pk?: number; // Pengetahuan Kuantitatif
-  lib?: number; // Literasi Bahasa Indonesia
-  ling?: number; // Literasi Bahasa Inggris
-  pm?: number; // Penalaran Matematika
-  rerata?: number;
-  total?: number;
+  jenis_tes?: string;
+  mata_pelajaran?: string;
+  scor?: number;
   cabang?: string;
   created_at?: string;
   updated_at?: string;
-  siswa_id?: string;
 }
 
 export interface NilaiStandar {

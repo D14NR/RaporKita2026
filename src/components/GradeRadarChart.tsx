@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
 import { Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer, Tooltip } from 'recharts';
+import { roundScore, formatScore } from '../lib/formatUtils';
 
 interface GradeRadarChartProps {
   data: any[];
@@ -10,12 +11,12 @@ export const GradeRadarChart: React.FC<GradeRadarChartProps> = ({ data }) => {
     const averages: Record<string, { total: number, count: number }> = {};
     data.forEach(item => {
       if (!averages[item.mata_pelajaran]) averages[item.mata_pelajaran] = { total: 0, count: 0 };
-      averages[item.mata_pelajaran].total += item.nilai;
+      averages[item.mata_pelajaran].total += Number(item.nilai) || 0;
       averages[item.mata_pelajaran].count += 1;
     });
     return Object.entries(averages).map(([subject, { total, count }]) => ({
       subject,
-      avg: total / count
+      avg: roundScore(total / (count || 1))
     }));
   }, [data]);
 
@@ -27,7 +28,7 @@ export const GradeRadarChart: React.FC<GradeRadarChartProps> = ({ data }) => {
           <PolarAngleAxis dataKey="subject" />
           <PolarRadiusAxis angle={30} domain={[0, 100]} />
           <Radar name="Nilai" dataKey="avg" stroke="#8884d8" fill="#8884d8" fillOpacity={0.6} />
-          <Tooltip />
+          <Tooltip formatter={(value: any) => [formatScore(value), 'Rata-rata']} />
         </RadarChart>
       </ResponsiveContainer>
     </div>

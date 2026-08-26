@@ -34,6 +34,7 @@ import { DataSiswa } from '../types';
 import { d1 } from '../lib/d1';
 import { supabaseUji } from '../lib/supabaseUji';
 import { formatTanggalIndo } from '../lib/dateUtils';
+import { formatScore, roundScore } from '../lib/formatUtils';
 
 export interface Question {
   id: string | number;
@@ -943,7 +944,7 @@ export const UjiMateriView: React.FC<UjiMateriViewProps> = ({ currentStudent }) 
     });
 
     const score = totalPossiblePoints > 0 
-      ? Math.round((totalEarnedPoints / totalPossiblePoints) * 100) 
+      ? roundScore((totalEarnedPoints / totalPossiblePoints) * 100) 
       : 0;
     const durationUsed = (activeQuizPackage.timeLimitMinutes * 60) - timeRemainingSeconds;
 
@@ -1007,7 +1008,7 @@ export const UjiMateriView: React.FC<UjiMateriViewProps> = ({ currentStudent }) 
   // Calculate statistics
   const totalAttempts = attemptsHistory.length;
   const avgScore = totalAttempts > 0 
-    ? Math.round(attemptsHistory.reduce((acc, curr) => acc + curr.score, 0) / totalAttempts) 
+    ? roundScore(attemptsHistory.reduce((acc, curr) => acc + curr.score, 0) / totalAttempts) 
     : 0;
   const passedCount = attemptsHistory.filter(a => a.score >= 70).length;
 
@@ -1649,7 +1650,7 @@ export const UjiMateriView: React.FC<UjiMateriViewProps> = ({ currentStudent }) 
                     </div>
 
                     <div className="text-3xl sm:text-5xl font-black tracking-tight mt-1 sm:mt-2">
-                      {attempt.score} <span className="text-base sm:text-lg font-bold opacity-80">/ 100</span>
+                      {formatScore(attempt.score)} <span className="text-base sm:text-lg font-bold opacity-80">/ 100</span>
                     </div>
 
                     <p className="text-xs sm:text-sm font-semibold opacity-90 truncate max-w-md mx-auto">
@@ -2002,7 +2003,7 @@ export const UjiMateriView: React.FC<UjiMateriViewProps> = ({ currentStudent }) 
                       <div className={`text-base sm:text-lg font-black ${
                         att.score >= 80 ? 'text-emerald-600 dark:text-emerald-400' : att.score >= 60 ? 'text-sky-600 dark:text-sky-400' : 'text-amber-600 dark:text-amber-400'
                       }`}>
-                        {att.score} <span className="text-xs text-slate-400 font-normal">/ 100</span>
+                        {formatScore(att.score)} <span className="text-xs text-slate-400 font-normal">/ 100</span>
                       </div>
                       <div className="text-[10px] text-slate-400 font-bold">
                         Selesai {att.correctCount} dari {att.totalQuestions}
@@ -2029,7 +2030,7 @@ export const UjiMateriView: React.FC<UjiMateriViewProps> = ({ currentStudent }) 
             {allPackages.map((pkg) => {
               const attempts = getPackageAttempts(pkg);
               const pkgAvg = attempts.length > 0 
-                ? Math.round(attempts.reduce((a, b) => a + b.score, 0) / attempts.length) 
+                ? roundScore(attempts.reduce((a, b) => a + b.score, 0) / attempts.length) 
                 : 0;
 
               return (
@@ -2042,7 +2043,7 @@ export const UjiMateriView: React.FC<UjiMateriViewProps> = ({ currentStudent }) 
                     <span className={`text-xs font-black shrink-0 ${
                       attempts.length === 0 ? 'text-slate-400' : pkgAvg >= 80 ? 'text-emerald-600 dark:text-emerald-400' : pkgAvg >= 60 ? 'text-sky-600 dark:text-sky-400' : 'text-amber-600 dark:text-amber-400'
                     }`}>
-                      {attempts.length === 0 ? 'Belum Diuji' : `${pkgAvg}% (Penguasaan)`}
+                      {attempts.length === 0 ? 'Belum Diuji' : `${formatScore(pkgAvg)}% (Penguasaan)`}
                     </span>
                   </div>
 

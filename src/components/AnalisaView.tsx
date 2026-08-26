@@ -21,6 +21,7 @@ import {
   ChevronUp
 } from 'lucide-react';
 import { Attendance, LearningProgress, NilaiEvaluasi, OutsideService } from '../types';
+import { formatScore, roundScore } from '../lib/formatUtils';
 
 interface AnalisaViewProps {
   attendanceRecords: Attendance[];
@@ -105,7 +106,7 @@ export const AnalisaView: React.FC<AnalisaViewProps> = ({
       const services = outsideServices.filter(r => (r.mata_pelajaran || 'Umum').toLowerCase() === subject.toLowerCase());
 
       const avgGrade = grades.length > 0 
-        ? grades.reduce((acc, curr) => acc + Number(curr.nilai), 0) / grades.length 
+        ? roundScore(grades.reduce((acc, curr) => acc + Number(curr.nilai), 0) / grades.length) 
         : null;
       
       const attendanceRate = attendance.length > 0
@@ -132,10 +133,10 @@ export const AnalisaView: React.FC<AnalisaViewProps> = ({
         kelebihan.push(`Kehadiran sangat baik (${attendanceRate.toFixed(0)}%)`);
       }
       if (avgGrade !== null && avgGrade >= 80) {
-        kelebihan.push(`Nilai rata-rata evaluasi tinggi (${avgGrade.toFixed(1)})`);
+        kelebihan.push(`Nilai rata-rata evaluasi tinggi (${formatScore(avgGrade)})`);
       }
       if (pAvg >= 80) {
-        kelebihan.push(`Tingkat penguasaan materi sangat baik (${pAvg.toFixed(0)}%)`);
+        kelebihan.push(`Tingkat penguasaan materi sangat baik (${formatScore(pAvg)}%)`);
       }
       if (services.length > 0) {
         kelebihan.push(`Aktif mengikuti ${services.length} sesi Layanan Luar KBM/Konsultasi`);
@@ -147,10 +148,10 @@ export const AnalisaView: React.FC<AnalisaViewProps> = ({
       // Compute Kekurangan (Weaknesses)
       const kekurangan: string[] = [];
       if (attendanceRate !== null && attendanceRate < 80) {
-        kekurangan.push(`Tingkat kehadiran perlu ditingkatkan (${attendanceRate.toFixed(0)}%)`);
+        kekurangan.push(`Tingkat kehadiran perlu ditingkatkan (${formatScore(attendanceRate)}%)`);
       }
       if (avgGrade !== null && avgGrade < 75) {
-        kekurangan.push(`Rata-rata nilai evaluasi masih di bawah target (${avgGrade.toFixed(1)})`);
+        kekurangan.push(`Rata-rata nilai evaluasi masih di bawah target (${formatScore(avgGrade)})`);
       }
       if (pAvg > 0 && pAvg < 70) {
         kekurangan.push(`Penguasaan konsep dasar perlu diperdalam (${pAvg.toFixed(0)}%)`);
@@ -544,7 +545,7 @@ export const AnalisaView: React.FC<AnalisaViewProps> = ({
                               {data.recentGrades.map((g, gIdx) => (
                                 <div key={gIdx} className="flex justify-between items-center bg-slate-50 dark:bg-slate-800/40 px-2.5 py-1.5 rounded-lg text-[11px]">
                                   <span className="text-slate-600 dark:text-slate-300 font-medium">{g.sub_bab_kode_soal || 'Evaluasi'}</span>
-                                  <span className="font-black text-indigo-600 dark:text-indigo-400">{g.nilai}</span>
+                                  <span className="font-black text-indigo-600 dark:text-indigo-400">{formatScore(g.nilai)}</span>
                                 </div>
                               ))}
                             </div>

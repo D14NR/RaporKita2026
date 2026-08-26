@@ -259,3 +259,68 @@ export function getScheduleTimeStatus(
 
   return result;
 }
+
+/**
+ * Checks if a schedule item has finished (either date is in the past, or date is today and end-time has passed, or status is marked 'Selesai').
+ */
+export function isScheduleFinished(
+  item: {
+    tanggal?: string | null;
+    day?: string | null;
+    time_start?: string | null;
+    time_end?: string | null;
+    status?: string | null;
+  } | null | undefined,
+  simulatedTimeMinutes?: number | null
+): boolean {
+  if (!item) return false;
+
+  // 1. Check if status explicitly says 'Selesai'
+  if (item.status && String(item.status).trim().toLowerCase() === 'selesai') {
+    return true;
+  }
+
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const currentMonth = now.getMonth();
+  const currentDate = now.getDate();
+  const todayMidnight = new Date(currentYear, currentMonth, currentDate).getTime();
+
+  const currentMin = simulatedTimeMinutes !== undefined && simulatedTimeMinutes !== null
+    ? simulatedTimeMinutes
+    : (now.getHours() * 60 + now.getMinutes());
+
+  const endMin = parseTimeInMinutes(item.time_end);
+
+  // 2. Check if tanggal is provided
+  const cleanTanggal = item.tanggal ? String(item.tanggal).trim() : '';
+  if (cleanTanggal && cleanTanggal !== 'No Date' && cleanTanggal !== '-') {
+    const parsed = parseDateSafe(cleanTanggal);
+    if (parsed) {
+      const itemMidnight = new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate()).getTime();
+      if (itemMidnight < todayMidnight) {
+        // Date is strictly in the past
+        return true;
+      }
+      if (itemMidnight > todayMidnight) {
+        // Date is in the future
+        return false;
+      }
+      // Date is TODAY: check time_end
+      if (endMin !== null) {
+        return currentMin >= endMin;
+      }
+      return false;
+    }
+  }
+
+  // 3. If no explicit valid date, check day match (recurring schedule)
+  if (isScheduleForToday(item)) {
+    if (endMin !== null) {
+      return currentMin >= endMin;
+    }
+  }
+
+  return false;
+}
+

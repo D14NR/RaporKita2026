@@ -161,16 +161,21 @@ CREATE TABLE IF NOT EXISTS public.perkembangan_belajar (
 -- 5. Tabel Nilai Evaluasi (nilai_evaluasi)
 CREATE TABLE IF NOT EXISTS public.nilai_evaluasi (
     id UUID NOT NULL DEFAULT gen_random_uuid(),
+    siswa_id UUID NULL,
     nis CHARACTER VARYING(50) NULL,
+    nama_siswa CHARACTER VARYING(255) NULL,
     nama CHARACTER VARYING(255) NULL,
+    jenjang_studi CHARACTER VARYING(50) NULL,
     tanggal DATE NOT NULL DEFAULT CURRENT_DATE,
+    kode_pengajar CHARACTER VARYING(50) NULL,
+    nama_pengajar CHARACTER VARYING(255) NULL,
     mata_pelajaran CHARACTER VARYING(255) NULL,
+    sub_bab_kode_soal CHARACTER VARYING(255) NULL,
     sub_bab CHARACTER VARYING(255) NULL,
-    nilai NUMERIC(5, 2) NULL,
+    nilai NUMERIC(7, 2) NULL,
     cabang CHARACTER VARYING(100) NULL,
     created_at TIMESTAMP WITH TIME ZONE NULL DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE NULL DEFAULT NOW(),
-    siswa_id UUID NULL,
     CONSTRAINT nilai_evaluasi_pkey PRIMARY KEY (id),
     CONSTRAINT nilai_evaluasi_siswa_id_fkey FOREIGN KEY (siswa_id) REFERENCES public.data_siswa (id) ON UPDATE CASCADE ON DELETE CASCADE
 );

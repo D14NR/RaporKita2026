@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { roundScore, formatScore } from '../lib/formatUtils';
 
 interface SubjectBarChartProps {
   data: any[];
@@ -20,7 +21,7 @@ export const SubjectBarChart: React.FC<SubjectBarChartProps> = ({ data, title, x
     });
     return Object.entries(sums).map(([name, { total, count }]) => ({
       name,
-      avg: total / count
+      avg: roundScore(total / (count || 1))
     }));
   }, [data, xKey, yKey]);
 
@@ -35,8 +36,10 @@ export const SubjectBarChart: React.FC<SubjectBarChartProps> = ({ data, title, x
           <BarChart data={chartData}>
             <CartesianGrid strokeDasharray="3 3" />
             <XAxis dataKey="name" />
-            <YAxis domain={[0, 100]} />
-            <Tooltip />
+            <YAxis />
+            <Tooltip 
+              formatter={(value: any) => [formatScore(value), 'Rata-rata Nilai']}
+            />
             <Bar dataKey="avg" fill="#3b82f6" name="Rata-rata Nilai" />
           </BarChart>
         </ResponsiveContainer>
