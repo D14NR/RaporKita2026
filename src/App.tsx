@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 import { 
   BookOpen, 
   Calendar, 
@@ -53,6 +54,7 @@ import {
   PermintaanPelayanan
 } from './types';
 import Login from './components/Login';
+import { WeeklySummaryCard } from './components/WeeklySummaryCard';
 import { AttendancePieChart } from './components/AttendancePieChart';
 import { PerkembanganProgress } from './components/PerkembanganProgress';
 import { SubjectBarChart } from './components/SubjectBarChart';
@@ -1793,9 +1795,18 @@ export default function App() {
         {/* WORKSPACE & VIEWS */}
         <section id="workspace-container" className="flex-1 min-w-0">
           
-          {/* TAB 1: OVERVIEW / DASHBOARD */}
-          {activeTab === 'overview' && (
-            <div id="view-overview" className="space-y-6">
+          <AnimatePresence mode="wait">
+            {/* TAB 1: OVERVIEW / DASHBOARD */}
+            {activeTab === 'overview' && (
+              <motion.div 
+                key="overview"
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -12 }}
+                transition={{ duration: 0.25, ease: "easeOut" }}
+                id="view-overview" 
+                className="space-y-6"
+              >
               
               {/* Active KBM Schedule Alert System */}
               <ActiveScheduleAlert
@@ -2195,94 +2206,167 @@ export default function App() {
 
               </div>
 
-            </div>
-          )}
+              {/* Weekly Trend Summary */}
+              <div className="mt-6">
+                <WeeklySummaryCard 
+                  attendanceRecords={attendanceRecords}
+                  learningProgress={learningProgress}
+                />
+              </div>
 
-          {/* TAB 2: JADWAL KBM REGULER */}
-          {activeTab === 'kbm-reguler' && (
-            <KbmRegulerView
-              currentStudent={currentStudent}
-              selectedStudentData={selectedStudentData}
-              regularSchedules={regularSchedules}
-              isKbmLoading={isKbmLoading}
-              isThisOrNextMonth={isThisOrNextMonth}
-              isScheduleFinished={isScheduleFinished}
-              handleOpenLeaveModal={handleOpenLeaveModal}
-            />
-          )}
+              </motion.div>
+            )}
 
-          {/* TAB 3: JADWAL KBM TAMBAHAN */}
-          {activeTab === 'kbm-tambahan' && (
-            <KbmKhususView
-              currentStudent={currentStudent}
-              selectedStudentData={selectedStudentData}
-              additionalSchedules={additionalSchedules}
-              isThisOrNextMonth={isThisOrNextMonth}
-              isScheduleFinished={isScheduleFinished}
-              handleOpenLeaveModal={handleOpenLeaveModal}
-            />
-          )}
+            {/* TAB 2: JADWAL KBM REGULER */}
+            {activeTab === 'kbm-reguler' && (
+              <motion.div
+                key="kbm-reguler"
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -12 }}
+                transition={{ duration: 0.25, ease: "easeOut" }}
+              >
+                <KbmRegulerView
+                  currentStudent={currentStudent}
+                  selectedStudentData={selectedStudentData}
+                  regularSchedules={regularSchedules}
+                  isKbmLoading={isKbmLoading}
+                  isThisOrNextMonth={isThisOrNextMonth}
+                  isScheduleFinished={isScheduleFinished}
+                  handleOpenLeaveModal={handleOpenLeaveModal}
+                />
+              </motion.div>
+            )}
 
-          {/* TAB 4: RIWAYAT PRESENSI */}
-          {activeTab === 'presensi' && (
-            <PresensiView
-              currentStudent={currentStudent}
-              attendanceRecords={filteredAttendanceRecords}
-              availableAttendanceMonths={availableAttendanceMonths}
-              attendanceMonthFilter={attendanceMonthFilter}
-              setAttendanceMonthFilter={setAttendanceMonthFilter}
-            />
-          )}
+            {/* TAB 3: JADWAL KBM TAMBAHAN */}
+            {activeTab === 'kbm-tambahan' && (
+              <motion.div
+                key="kbm-tambahan"
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -12 }}
+                transition={{ duration: 0.25, ease: "easeOut" }}
+              >
+                <KbmKhususView
+                  currentStudent={currentStudent}
+                  selectedStudentData={selectedStudentData}
+                  additionalSchedules={additionalSchedules}
+                  isThisOrNextMonth={isThisOrNextMonth}
+                  isScheduleFinished={isScheduleFinished}
+                  handleOpenLeaveModal={handleOpenLeaveModal}
+                />
+              </motion.div>
+            )}
 
-          {/* TAB 5: RIWAYAT PERKEMBANGAN BELAJAR */}
-          {activeTab === 'perkembangan' && (
-            <PerkembanganView
-              currentStudent={currentStudent}
-              learningProgress={learningProgress}
-            />
-          )}
+            {/* TAB 4: RIWAYAT PRESENSI */}
+            {activeTab === 'presensi' && (
+              <motion.div
+                key="presensi"
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -12 }}
+                transition={{ duration: 0.25, ease: "easeOut" }}
+              >
+                <PresensiView
+                  currentStudent={currentStudent}
+                  attendanceRecords={filteredAttendanceRecords}
+                  availableAttendanceMonths={availableAttendanceMonths}
+                  attendanceMonthFilter={attendanceMonthFilter}
+                  setAttendanceMonthFilter={setAttendanceMonthFilter}
+                />
+              </motion.div>
+            )}
 
-          {/* TAB: UJI MATERI */}
-          {activeTab === 'uji-materi' && (
-            <UjiMateriView currentStudent={currentStudent} />
-          )}
+            {/* TAB 5: RIWAYAT PERKEMBANGAN BELAJAR */}
+            {activeTab === 'perkembangan' && (
+              <motion.div
+                key="perkembangan"
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -12 }}
+                transition={{ duration: 0.25, ease: "easeOut" }}
+              >
+                <PerkembanganView
+                  currentStudent={currentStudent}
+                  learningProgress={learningProgress}
+                />
+              </motion.div>
+            )}
 
-          {/* TAB 6: RIWAYAT NILAI-NILAI */}
-          {activeTab === 'nilai' && (
-            <NilaiView
-              currentStudent={currentStudent}
-              nilaiEvaluasi={nilaiEvaluasi}
-              nilaiStandar={nilaiStandar}
-              nilaiSnbtUtbk={nilaiSnbtUtbk}
-              groupedSnbt={groupedSnbt}
-            />
-          )}
+            {/* TAB: UJI MATERI */}
+            {activeTab === 'uji-materi' && (
+              <motion.div
+                key="uji-materi"
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -12 }}
+                transition={{ duration: 0.25, ease: "easeOut" }}
+              >
+                <UjiMateriView currentStudent={currentStudent} />
+              </motion.div>
+            )}
 
-          {/* TAB 7: LAYANAN DI LUAR KBM */}
-          {activeTab === 'luar-kbm' && (
-            <LuarKbmView
-              currentStudent={currentStudent}
-              permintaanPelayanan={permintaanPelayanan}
-              outsideServices={outsideServices}
-              showChartLuarKbm={showChartLuarKbm}
-              setShowChartLuarKbm={setShowChartLuarKbm}
-              setIsBookingModalOpen={setIsBookingModalOpen}
-              setIsOutsideServiceModalOpen={setIsOutsideServiceModalOpen}
-            />
-          )}
+            {/* TAB 6: RIWAYAT NILAI-NILAI */}
+            {activeTab === 'nilai' && (
+              <motion.div
+                key="nilai"
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -12 }}
+                transition={{ duration: 0.25, ease: "easeOut" }}
+              >
+                <NilaiView
+                  currentStudent={currentStudent}
+                  nilaiEvaluasi={nilaiEvaluasi}
+                  nilaiStandar={nilaiStandar}
+                  nilaiSnbtUtbk={nilaiSnbtUtbk}
+                  groupedSnbt={groupedSnbt}
+                />
+              </motion.div>
+            )}
+
+            {/* TAB 7: LAYANAN DI LUAR KBM */}
+            {activeTab === 'luar-kbm' && (
+              <motion.div
+                key="luar-kbm"
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -12 }}
+                transition={{ duration: 0.25, ease: "easeOut" }}
+              >
+                <LuarKbmView
+                  currentStudent={currentStudent}
+                  permintaanPelayanan={permintaanPelayanan}
+                  outsideServices={outsideServices}
+                  showChartLuarKbm={showChartLuarKbm}
+                  setShowChartLuarKbm={setShowChartLuarKbm}
+                  setIsBookingModalOpen={setIsBookingModalOpen}
+                  setIsOutsideServiceModalOpen={setIsOutsideServiceModalOpen}
+                />
+              </motion.div>
+            )}
 
 
-          {/* TAB 8: ANALISA */}
-          {activeTab === 'analisa' && (
-            <div id="view-analisa" className="space-y-6">
-              <AnalisaView 
-                attendanceRecords={attendanceRecords}
-                learningProgress={learningProgress}
-                nilaiEvaluasi={nilaiEvaluasi}
-                outsideServices={outsideServices}
-              />
-            </div>
-          )}
+            {/* TAB 8: ANALISA */}
+            {activeTab === 'analisa' && (
+              <motion.div 
+                key="analisa"
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -12 }}
+                transition={{ duration: 0.25, ease: "easeOut" }}
+                id="view-analisa" 
+                className="space-y-6"
+              >
+                <AnalisaView 
+                  attendanceRecords={attendanceRecords}
+                  learningProgress={learningProgress}
+                  nilaiEvaluasi={nilaiEvaluasi}
+                  outsideServices={outsideServices}
+                />
+              </motion.div>
+            )}
+          </AnimatePresence>
 
         </section>
       </main>
