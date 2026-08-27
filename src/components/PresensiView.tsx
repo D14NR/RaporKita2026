@@ -109,6 +109,7 @@ export const PresensiView: React.FC<PresensiViewProps> = ({
         (item.subject && item.subject.toLowerCase().includes(q)) ||
         (item.notes && item.notes.toLowerCase().includes(q)) ||
         (item.date && item.date.toLowerCase().includes(q));
+      
       return matchesStatus && matchesSubject && matchesQuery;
     });
   }, [attendanceRecords, selectedStatus, selectedSubject, searchQuery]);

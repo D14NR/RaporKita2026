@@ -2227,7 +2227,7 @@ export default function App() {
           {activeTab === 'presensi' && (
             <PresensiView
               currentStudent={currentStudent}
-              attendanceRecords={attendanceRecords}
+              attendanceRecords={filteredAttendanceRecords}
               availableAttendanceMonths={availableAttendanceMonths}
               attendanceMonthFilter={attendanceMonthFilter}
               setAttendanceMonthFilter={setAttendanceMonthFilter}
