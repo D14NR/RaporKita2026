@@ -2,26 +2,30 @@ import React, { useMemo } from 'react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts';
 
 interface AttendancePieChartProps {
-  data: any[];
+  stats: {
+    hadir: number;
+    izin: number;
+    alpa: number;
+    sakit: number;
+  };
 }
 
 const COLORS = {
   'Hadir': '#10b981',
   'Izin': '#f59e0b',
-  'Alpa': '#ef4444',
+  'Alpha': '#ef4444',
   'Sakit': '#8b5cf6'
 };
 
-export const AttendancePieChart: React.FC<AttendancePieChartProps> = ({ data }) => {
+export const AttendancePieChart: React.FC<AttendancePieChartProps> = ({ stats }) => {
   const chartData = useMemo(() => {
-    const counts: Record<string, number> = { 'Hadir': 0, 'Izin': 0, 'Alpa': 0, 'Sakit': 0 };
-    data.forEach(item => {
-      if (counts.hasOwnProperty(item.status)) {
-        counts[item.status]++;
-      }
-    });
-    return Object.entries(counts).map(([name, value]) => ({ name, value }));
-  }, [data]);
+    return [
+      { name: 'Hadir', value: stats.hadir },
+      { name: 'Izin', value: stats.izin },
+      { name: 'Alpha', value: stats.alpa },
+      { name: 'Sakit', value: stats.sakit }
+    ].filter(item => item.value > 0);
+  }, [stats]);
 
   return (
     <div className="h-60 w-full">

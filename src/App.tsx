@@ -799,12 +799,12 @@ export default function App() {
           const mappedAttendance: Attendance[] = progressRows
             .filter((row: any) => String(row.kehadiran ?? '').trim().length > 0)
             .map((row: any) => {
-            let status: 'Hadir' | 'Sakit' | 'Izin' | 'Alpa' = 'Hadir';
+            let status: 'Hadir' | 'Sakit' | 'Izin' | 'Alpa' | 'Alpha' = 'Hadir';
             const rawKehadiran = (row.kehadiran || '').trim().toLowerCase();
             if (rawKehadiran.startsWith('h')) status = 'Hadir';
             else if (rawKehadiran.startsWith('s')) status = 'Sakit';
             else if (rawKehadiran.startsWith('i')) status = 'Izin';
-            else if (rawKehadiran.startsWith('a')) status = 'Alpa';
+            else if (rawKehadiran.startsWith('a')) status = 'Alpha';
             
             return {
               id: row.id,
@@ -1233,19 +1233,75 @@ export default function App() {
 
   // Helper for attendance stats
   const getAttendanceStats = () => {
-    if (!filteredAttendanceRecords || filteredAttendanceRecords.length === 0) return { percent: 100, hadir: 0, sakit: 0, izin: 0, alpa: 0 };
-    const total = filteredAttendanceRecords.length;
+    const stats = { percent: 100, hadir: 0, sakit: 0, izin: 0, alpa: 0, total: 0 };
+    
+    if (!filteredAttendanceRecords || filteredAttendanceRecords.length === 0) {
+      if (attendanceMonthFilter !== 'all') {
+        const expected = getExpectedSessionsForMonth(attendanceMonthFilter);
+        stats.alpa = expected;
+        stats.total = expected;
+        stats.percent = 0;
+      }
+      return stats;
+    }
+
     const hadir = filteredAttendanceRecords.filter(r => r.status === 'Hadir').length;
     const sakit = filteredAttendanceRecords.filter(r => r.status === 'Sakit').length;
     const izin = filteredAttendanceRecords.filter(r => r.status === 'Izin').length;
-    const alpa = filteredAttendanceRecords.filter(r => r.status === 'Alpa').length;
+    const alpaInDb = filteredAttendanceRecords.filter(r => r.status === 'Alpa' || r.status === 'Alpha').length;
+    
+    let extraAlpa = 0;
+    let expectedTotal = 0;
+
+    if (attendanceMonthFilter !== 'all') {
+      expectedTotal = getExpectedSessionsForMonth(attendanceMonthFilter);
+      const currentTotal = hadir + sakit + izin + alpaInDb;
+      extraAlpa = Math.max(0, expectedTotal - currentTotal);
+    } else {
+      // Sum up expected sessions for all available months
+      availableAttendanceMonths.forEach(m => {
+        expectedTotal += getExpectedSessionsForMonth(m.value);
+      });
+      const currentTotal = hadir + sakit + izin + alpaInDb;
+      extraAlpa = Math.max(0, expectedTotal - currentTotal);
+    }
+
+    const totalAlpa = alpaInDb + extraAlpa;
+    const totalSessions = Math.max(filteredAttendanceRecords.length, hadir + sakit + izin + totalAlpa);
+
     return {
-      percent: Math.round((hadir / total) * 100),
+      percent: totalSessions > 0 ? Math.round((hadir / totalSessions) * 100) : 100,
       hadir,
       sakit,
       izin,
-      alpa
+      alpa: totalAlpa,
+      total: totalSessions
     };
+  };
+
+  const getExpectedSessionsForMonth = (monthStr: string) => {
+    if (monthStr === 'all') return 0;
+    const now = new Date();
+    const parts = monthStr.split('-');
+    const year = parseInt(parts[0], 10);
+    const month = parseInt(parts[1], 10);
+    
+    const currentYear = now.getFullYear();
+    const currentMonth = now.getMonth() + 1; // 1-12
+
+    if (year < currentYear || (year === currentYear && month < currentMonth)) {
+      return 12; // Past month: 4 weeks * 3
+    }
+    
+    if (year === currentYear && month === currentMonth) {
+      const day = now.getDate();
+      if (day <= 7) return 3;
+      if (day <= 14) return 6;
+      if (day <= 21) return 9;
+      return 12;
+    }
+    
+    return 0; // Future month
   };
 
   // Helper for grade averages
@@ -2044,7 +2100,7 @@ export default function App() {
                           <span className="text-lg font-black text-amber-900">{attendanceStats.izin} Hari</span>
                         </div>
                         <div className="bg-rose-50/50 p-2.5 rounded-xl border border-rose-100/50">
-                          <span className="block text-[10px] font-bold text-rose-800 uppercase">Alpa</span>
+                          <span className="block text-[10px] font-bold text-rose-800 uppercase">Alpha</span>
                           <span className="text-lg font-black text-rose-900">{attendanceStats.alpa} Hari</span>
                         </div>
                       </div>

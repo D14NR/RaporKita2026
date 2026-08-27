@@ -44,18 +44,53 @@ export const PresensiView: React.FC<PresensiViewProps> = ({
 
   // Stats calculation
   const stats = useMemo(() => {
-    const total = attendanceRecords.length;
-    if (total === 0) {
-      return { hadir: 0, sakit: 0, izin: 0, alpa: 0, total: 0, attendanceRate: 0 };
-    }
+    const totalRecords = attendanceRecords.length;
+    
     const hadir = attendanceRecords.filter(r => r.status === 'Hadir').length;
     const sakit = attendanceRecords.filter(r => r.status === 'Sakit').length;
     const izin = attendanceRecords.filter(r => r.status === 'Izin').length;
-    const alpa = attendanceRecords.filter(r => r.status === 'Alpa').length;
-    const rate = Math.round((hadir / total) * 100);
+    const alpaInDb = attendanceRecords.filter(r => r.status === 'Alpa' || r.status === 'Alpha').length;
 
-    return { hadir, sakit, izin, alpa, total, attendanceRate: rate };
-  }, [attendanceRecords]);
+    let extraAlpa = 0;
+    let expectedTotal = 0;
+
+    const getExpectedSessionsForMonth = (monthStr: string) => {
+      const now = new Date();
+      const parts = monthStr.split('-');
+      const year = parseInt(parts[0], 10);
+      const month = parseInt(parts[1], 10);
+      const currentYear = now.getFullYear();
+      const currentMonth = now.getMonth() + 1;
+      if (year < currentYear || (year === currentYear && month < currentMonth)) return 12;
+      if (year === currentYear && month === currentMonth) {
+        const day = now.getDate();
+        if (day <= 7) return 3;
+        if (day <= 14) return 6;
+        if (day <= 21) return 9;
+        return 12;
+      }
+      return 0;
+    };
+
+    if (attendanceMonthFilter !== 'all') {
+      expectedTotal = getExpectedSessionsForMonth(attendanceMonthFilter);
+      const currentTotal = hadir + sakit + izin + alpaInDb;
+      extraAlpa = Math.max(0, expectedTotal - currentTotal);
+    } else {
+      // Sum up expected sessions for all months available
+      availableAttendanceMonths.forEach(m => {
+        expectedTotal += getExpectedSessionsForMonth(m.value);
+      });
+      const currentTotal = hadir + sakit + izin + alpaInDb;
+      extraAlpa = Math.max(0, expectedTotal - currentTotal);
+    }
+
+    const totalAlpa = alpaInDb + extraAlpa;
+    const totalSessions = Math.max(totalRecords, hadir + sakit + izin + totalAlpa);
+    const rate = totalSessions > 0 ? Math.round((hadir / totalSessions) * 100) : 100;
+
+    return { hadir, sakit, izin, alpa: totalAlpa, total: totalSessions, attendanceRate: rate, extraAlpa };
+  }, [attendanceRecords, attendanceMonthFilter]);
 
   // Subjects list for filter
   const subjectsList = useMemo(() => {
@@ -175,10 +210,10 @@ export const PresensiView: React.FC<PresensiViewProps> = ({
             </div>
           </div>
 
-          {/* Alpa */}
+          {/* Alpha */}
           <div className="bg-white/5 backdrop-blur-sm p-4 rounded-2xl border border-white/10 flex flex-col justify-between hover:bg-white/10 transition">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-slate-300">Alpa / Tanpa Keterangan</span>
+              <span className="text-xs font-semibold text-slate-300">Alpha / Tanpa Keterangan</span>
               <div className="p-1.5 rounded-lg bg-rose-500/20 text-rose-300">
                 <AlertCircle className="h-4 w-4" />
               </div>
@@ -256,7 +291,7 @@ export const PresensiView: React.FC<PresensiViewProps> = ({
             <option value="Hadir">Hadir</option>
             <option value="Sakit">Sakit</option>
             <option value="Izin">Izin</option>
-            <option value="Alpa">Alpa</option>
+            <option value="Alpha">Alpha</option>
           </select>
 
           <select
@@ -301,7 +336,7 @@ export const PresensiView: React.FC<PresensiViewProps> = ({
             </div>
           </div>
 
-          <AttendancePieChart data={filteredRecords} />
+          <AttendancePieChart stats={stats} />
         </div>
       )}
 
@@ -369,6 +404,19 @@ export const PresensiView: React.FC<PresensiViewProps> = ({
                   </td>
                 </tr>
               ))}
+
+              {stats.extraAlpa > 0 && (
+                <tr className="bg-rose-50/30 dark:bg-rose-950/10">
+                  <td colSpan={4} className="py-4 px-6">
+                    <div className="flex items-center gap-3 text-rose-600 dark:text-rose-400">
+                      <AlertCircle className="h-4 w-4 shrink-0" />
+                      <span className="text-xs font-bold italic">
+                        Catatan: Terdeteksi {stats.extraAlpa} sesi Alpha otomatis karena belum memenuhi batas minimal 3 presensi per minggu {attendanceMonthFilter === 'all' ? '(Kumulatif seluruh bulan)' : ''} (Total {stats.alpa} Alpha).
+                      </span>
+                    </div>
+                  </td>
+                </tr>
+              )}
 
               {filteredRecords.length === 0 && (
                 <tr>

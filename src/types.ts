@@ -58,7 +58,7 @@ export interface Attendance {
   student_id: string;
   date: string;
   subject?: string;
-  status: 'Hadir' | 'Sakit' | 'Izin' | 'Alpa';
+  status: 'Hadir' | 'Sakit' | 'Izin' | 'Alpa' | 'Alpha';
   notes?: string;
 }
 
