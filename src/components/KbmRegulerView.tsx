@@ -13,7 +13,7 @@ import {
   GraduationCap
 } from 'lucide-react';
 import { RegularSchedule, Student, DataSiswa } from '../types';
-import { formatTanggalIndo } from '../lib/dateUtils';
+import { formatTanggalIndo, parseDateSafe, compareScheduleDates } from '../lib/dateUtils';
 
 interface KbmRegulerViewProps {
   currentStudent: DataSiswa | Student | null;
@@ -65,8 +65,8 @@ export const KbmRegulerView: React.FC<KbmRegulerViewProps> = ({
         selesai += 1;
         return;
       }
-      const itemDate = new Date(item.tanggal);
-      if (isNaN(itemDate.getTime())) {
+      const itemDate = parseDateSafe(item.tanggal);
+      if (!itemDate) {
         selesai += 1;
         return;
       }
@@ -98,8 +98,8 @@ export const KbmRegulerView: React.FC<KbmRegulerViewProps> = ({
 
         const today = new Date();
         const todayTime = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
-        const itemDate = item.tanggal ? new Date(item.tanggal) : new Date(NaN);
-        const itemTime = !isNaN(itemDate.getTime()) ? new Date(itemDate.getFullYear(), itemDate.getMonth(), itemDate.getDate()).getTime() : 0;
+        const itemDate = parseDateSafe(item.tanggal);
+        const itemTime = itemDate ? new Date(itemDate.getFullYear(), itemDate.getMonth(), itemDate.getDate()).getTime() : 0;
 
         if (statusFilter === 'HARI_INI') return itemTime === todayTime;
         if (statusFilter === 'AKAN_DATANG') return itemTime > todayTime;
@@ -115,6 +115,15 @@ export const KbmRegulerView: React.FC<KbmRegulerViewProps> = ({
         grouped[dateKey].push(item);
       });
 
+    // Sort items within each day by start time
+    Object.keys(grouped).forEach(dateKey => {
+      grouped[dateKey].sort((a, b) => {
+        const timeA = a.time_start || '';
+        const timeB = b.time_start || '';
+        return timeA.localeCompare(timeB);
+      });
+    });
+
     return grouped;
   }, [activeSchedules, searchQuery, statusFilter]);
 
@@ -122,37 +131,7 @@ export const KbmRegulerView: React.FC<KbmRegulerViewProps> = ({
     return Object.keys(groupedSchedules).sort((a, b) => {
       if (a === 'No Date') return 1;
       if (b === 'No Date') return -1;
-      
-      const dateA = new Date(a);
-      const dateB = new Date(b);
-      
-      if (isNaN(dateA.getTime()) || isNaN(dateB.getTime())) return 0;
-      
-      const timeA = dateA.getTime();
-      const timeB = dateB.getTime();
-      
-      const today = new Date();
-      const todayTime = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
-      
-      const getDayType = (time: number) => {
-        const date = new Date(time);
-        const itemTime = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
-        if (itemTime === todayTime) return 0; // Today
-        if (itemTime > todayTime) return 1; // Future
-        return 2; // Past
-      };
-      
-      const typeA = getDayType(timeA);
-      const typeB = getDayType(timeB);
-      
-      if (typeA !== typeB) {
-        return typeA - typeB;
-      }
-      
-      if (typeA === 2) {
-         return timeB - timeA;
-      }
-      return timeA - timeB;
+      return compareScheduleDates(a, b);
     });
   }, [groupedSchedules]);
 
@@ -163,8 +142,8 @@ export const KbmRegulerView: React.FC<KbmRegulerViewProps> = ({
 
   const getKbmDateBadge = (dateStr: string) => {
     if (!dateStr || dateStr === 'No Date') return null;
-    const itemDate = new Date(dateStr);
-    if (isNaN(itemDate.getTime())) return null;
+    const itemDate = parseDateSafe(dateStr);
+    if (!itemDate) return null;
     
     const today = new Date();
     const itemTime = new Date(itemDate.getFullYear(), itemDate.getMonth(), itemDate.getDate()).getTime();

@@ -12,7 +12,7 @@ import {
   Users
 } from 'lucide-react';
 import { AdditionalSchedule, Student, DataSiswa } from '../types';
-import { formatTanggalIndo } from '../lib/dateUtils';
+import { formatTanggalIndo, parseDateSafe, compareScheduleDates } from '../lib/dateUtils';
 
 interface KbmKhususViewProps {
   currentStudent: DataSiswa | Student | null;
@@ -66,25 +66,36 @@ export const KbmKhususView: React.FC<KbmKhususViewProps> = ({
     return { total, aktif, selesai };
   }, [activeSchedules, isScheduleFinished]);
 
-  // Filtered schedules
+  // Filtered and sorted schedules
   const filteredSchedules = useMemo(() => {
-    return activeSchedules.filter(item => {
-      const q = searchQuery.toLowerCase().trim();
-      const matchesQuery = !q ||
-        (item.subject && item.subject.toLowerCase().includes(q)) ||
-        (item.teacher && item.teacher.toLowerCase().includes(q)) ||
-        (item.kelas && item.kelas.toLowerCase().includes(q)) ||
-        (item.day && item.day.toLowerCase().includes(q)) ||
-        (item.tanggal && item.tanggal.toLowerCase().includes(q));
+    return activeSchedules
+      .filter(item => {
+        const q = searchQuery.toLowerCase().trim();
+        const matchesQuery = !q ||
+          (item.subject && item.subject.toLowerCase().includes(q)) ||
+          (item.teacher && item.teacher.toLowerCase().includes(q)) ||
+          (item.kelas && item.kelas.toLowerCase().includes(q)) ||
+          (item.day && item.day.toLowerCase().includes(q)) ||
+          (item.tanggal && item.tanggal.toLowerCase().includes(q));
 
-      if (!matchesQuery) return false;
+        if (!matchesQuery) return false;
 
-      const finished = isScheduleFinished(item);
-      if (statusFilter === 'AKTIF') return !finished && item.status !== 'Selesai';
-      if (statusFilter === 'SELESAI') return finished || item.status === 'Selesai';
+        const finished = isScheduleFinished(item);
+        if (statusFilter === 'AKTIF') return !finished && item.status !== 'Selesai';
+        if (statusFilter === 'SELESAI') return finished || item.status === 'Selesai';
 
-      return true;
-    });
+        return true;
+      })
+      .sort((a, b) => {
+        // Prioritize today at the top, then upcoming dates, then past dates
+        const dateComp = compareScheduleDates(a.tanggal, b.tanggal);
+        if (dateComp !== 0) return dateComp;
+
+        // Then by start time
+        const timeA = a.time_start || '';
+        const timeB = b.time_start || '';
+        return timeA.localeCompare(timeB);
+      });
   }, [activeSchedules, searchQuery, statusFilter, isScheduleFinished]);
 
   return (
@@ -236,8 +247,8 @@ export const KbmKhususView: React.FC<KbmKhususViewProps> = ({
             <GraduationCap className="h-5 w-5" />
           </div>
           <div>
-            <p className="text-xs font-bold text-indigo-900 dark:text-indigo-200">Asal Sekolah: {studentSekolah}</p>
-            <p className="text-[11px] text-indigo-700 dark:text-indigo-300">Jenjang Studi: {studentJenjang} • Cabang {studentCabang}</p>
+            <p className="text-xs font-bold text-indigo-900 dark:text-indigo-200">Informasi Cabang, Jenjang & Asal Sekolah</p>
+            <p className="text-[11px] text-indigo-700 dark:text-indigo-300">Menampilkan jadwal KBM Khusus untuk Cabang <strong className="font-bold">{studentCabang}</strong>, Jenjang <strong className="font-bold">{studentJenjang}</strong>, dan Asal Sekolah <strong className="font-bold">{studentSekolah}</strong>.</p>
           </div>
         </div>
         <span className="bg-indigo-100 dark:bg-indigo-900/60 text-indigo-800 dark:text-indigo-300 text-xs font-bold px-3 py-1.5 rounded-xl border border-indigo-200 dark:border-indigo-800 flex items-center gap-1.5">
@@ -330,7 +341,7 @@ export const KbmKhususView: React.FC<KbmKhususViewProps> = ({
             </div>
             <h4 className="text-sm font-bold text-slate-700 dark:text-slate-300">Tidak Ada Jadwal KBM Khusus</h4>
             <p className="text-xs text-slate-500 dark:text-slate-400 max-w-sm mx-auto">
-              {searchQuery ? 'Tidak ada jadwal yang cocok dengan kata kunci pencarian Anda.' : 'Siswa tidak memiliki jadwal kelas tambahan atau ekstrakurikuler terdaftar untuk bulan ini dan bulan depan.'}
+              {searchQuery ? 'Tidak ada jadwal yang cocok dengan kata kunci pencarian Anda.' : `Jadwal tidak ditemukan untuk Cabang ${studentCabang}, Jenjang ${studentJenjang}, dan Asal Sekolah ${studentSekolah}.`}
             </p>
           </div>
         )}

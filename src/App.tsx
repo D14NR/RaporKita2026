@@ -63,7 +63,7 @@ import { AnalisaView } from './components/AnalisaView';
 import { LeaveFormModal } from './components/LeaveFormModal';
 import { OutsideServiceFormModal } from './components/OutsideServiceFormModal';
 import { BookingServiceFormModal } from './components/BookingServiceFormModal';
-import { formatTanggalIndo, isThisOrNextMonth, isScheduleForToday, isScheduleFinished, parseDateSafe, getTodayIndoString, getScheduleTimeStatus, MONTHS_INDO } from './lib/dateUtils';
+import { formatTanggalIndo, isThisOrNextMonth, isScheduleForToday, isScheduleFinished, parseDateSafe, getTodayIndoString, getScheduleTimeStatus, MONTHS_INDO, compareDates, compareScheduleDates } from './lib/dateUtils';
 import { SettingsModal } from './components/SettingsModal';
 import { NotificationModal } from './components/NotificationModal';
 import { UjiMateriView } from './components/UjiMateriView';
@@ -1033,17 +1033,25 @@ export default function App() {
 
             return true;
           } else {
-            // Khusus: check Jenjang Studi
+            // KHUSUS MENU JADWAL KBM KHUSUS:
+            // Data diambil murni berdasarkan Cabang, Jenjang Studi, dan Asal Sekolah saja
+            
+            // 1. Check Jenjang Studi
             const normActiveJenjang = normalize(activeJenjang);
             const rowJenjangRaw = normalize(row.jenjang_studi || row.jenjang);
             
             if (normActiveJenjang) {
-              if (!rowJenjangRaw || !rowJenjangRaw.includes(normActiveJenjang)) {
+              if (!rowJenjangRaw) {
+                return false;
+              }
+              const cleanActiveJenjang = normActiveJenjang.replace(/[^a-z0-9]/g, '');
+              const cleanRowJenjang = rowJenjangRaw.replace(/[^a-z0-9]/g, '');
+              if (!cleanRowJenjang.includes(cleanActiveJenjang) && !cleanActiveJenjang.includes(cleanRowJenjang)) {
                 return false;
               }
             }
             
-            // check Sekolah
+            // 2. Check Asal Sekolah
             const normActiveSekolah = normalize(activeSekolah);
             const rowSekolahRaw = normalize(row.sekolah || row.asal_sekolah);
             
@@ -1056,15 +1064,6 @@ export default function App() {
               if (!cleanRowSekolah.includes(cleanActiveSekolah) && !cleanActiveSekolah.includes(cleanRowSekolah)) {
                 return false;
               }
-            }
-
-            // Check Mata Pelajaran yang dipilih untuk kelas khusus
-            if (studentSubjects.length > 0) {
-              const subjectMatch = studentSubjects.some(subj => {
-                if (!subj) return false;
-                return rowSubject.includes(subj) || subj.includes(rowSubject);
-              });
-              if (!subjectMatch) return false;
             }
 
             return true;
@@ -1165,8 +1164,17 @@ export default function App() {
           });
         };
 
-        mappedRegSchedules = dedupeList(mappedRegSchedules);
-        mappedKhususSchedules = dedupeList(mappedKhususSchedules);
+        mappedRegSchedules = dedupeList(mappedRegSchedules).sort((a, b) => {
+          const dateComp = compareScheduleDates(a.tanggal, b.tanggal);
+          if (dateComp !== 0) return dateComp;
+          return (a.time_start || '').localeCompare(b.time_start || '');
+        });
+
+        mappedKhususSchedules = dedupeList(mappedKhususSchedules).sort((a, b) => {
+          const dateComp = compareScheduleDates(a.tanggal, b.tanggal);
+          if (dateComp !== 0) return dateComp;
+          return (a.time_start || '').localeCompare(b.time_start || '');
+        });
 
         setRegularSchedules(mappedRegSchedules);
         setAdditionalSchedules(mappedKhususSchedules);
