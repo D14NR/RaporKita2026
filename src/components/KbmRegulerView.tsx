@@ -368,9 +368,9 @@ export const KbmRegulerView: React.FC<KbmRegulerViewProps> = ({
           <BookOpen className="w-5 h-5" />
         </div>
         <div className="flex-1">
-          <p className="text-xs font-bold text-sky-900 dark:text-sky-200">Informasi Cabang & Kelas</p>
+          <p className="text-xs font-bold text-sky-900 dark:text-sky-200">Informasi Cabang & Kelompok Kelas</p>
           <p className="text-xs text-sky-800 dark:text-sky-300 mt-0.5">
-            Menampilkan jadwal KBM untuk Cabang <strong className="font-bold">{studentCabang}</strong> dan Kelompok Kelas <strong className="font-bold">{studentKelas}</strong>. Pastikan mata pelajaran di profil sudah terisi dengan benar.
+            Menampilkan seluruh jadwal KBM Reguler untuk Cabang <strong className="font-bold">{studentCabang}</strong> dan Kelompok Kelas <strong className="font-bold">{studentKelas}</strong>.
           </p>
         </div>
       </div>
@@ -388,7 +388,7 @@ export const KbmRegulerView: React.FC<KbmRegulerViewProps> = ({
           </div>
           <h4 className="text-sm font-bold text-slate-700 dark:text-slate-300">Tidak Ada Jadwal KBM Ditemukan</h4>
           <p className="text-xs text-slate-500 dark:text-slate-400 max-w-sm">
-            {searchQuery ? 'Tidak ada jadwal yang cocok dengan kata kunci pencarian Anda.' : 'Jadwal tidak ditemukan untuk Cabang, Kelompok Kelas, dan Mata Pelajaran di profil siswa saat ini.'}
+            {searchQuery ? 'Tidak ada jadwal yang cocok dengan kata kunci pencarian Anda.' : `Jadwal tidak ditemukan untuk Cabang ${studentCabang} dan Kelompok Kelas ${studentKelas}.`}
           </p>
         </div>
       ) : (

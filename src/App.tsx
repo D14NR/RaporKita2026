@@ -987,11 +987,20 @@ export default function App() {
             }
           }
 
+          // 3. Check Subject existence
+          const rowSubjectRaw = row.mata_pelajaran || row.mapel || row.subject || row.nama_mapel || row.pelajaran;
+          const rowSubject = normalize(rowSubjectRaw);
+
+          if (!rowSubject || rowSubject === 'mata pelajaran' || rowSubject === '-') {
+            return false;
+          }
+
           if (targetJenis === 'Reguler') {
-            // 3. Strict Check Kelompok Kelas (Kelompok Kelas matches class in KBM schedule table)
+            // KHUSUS MENU JADWAL KBM REGULER:
+            // Data diambil murni berdasarkan Cabang dan Kelompok Kelas saja (semua mapel kelas reguler ditampilkan)
             const normActiveKelas = normalize(activeKelas);
             const rowKelasRaw = normalize(row.kelompok_kelas || row.kelas || row.sekolah);
-  
+
             if (normActiveKelas) {
               if (!rowKelasRaw) {
                 return false;
@@ -1004,7 +1013,7 @@ export default function App() {
                 const cleanItem = item.replace(/[^a-z0-9]/g, '');
                 
                 if (cleanItem === cleanActive) return true;
-  
+
                 // Ensure grade number matches if present
                 const activeNums = normActiveKelas.match(/\d+/g) || [];
                 const itemNums = item.match(/\d+/g) || [];
@@ -1013,17 +1022,18 @@ export default function App() {
                     return false;
                   }
                 }
-  
+
                 return cleanItem.includes(cleanActive) || cleanActive.includes(cleanItem);
               });
-  
+
               if (!matchesClass) {
                 return false;
               }
             }
+
+            return true;
           } else {
-            // Khusus
-            // check Jenjang Studi
+            // Khusus: check Jenjang Studi
             const normActiveJenjang = normalize(activeJenjang);
             const rowJenjangRaw = normalize(row.jenjang_studi || row.jenjang);
             
@@ -1047,25 +1057,18 @@ export default function App() {
                 return false;
               }
             }
+
+            // Check Mata Pelajaran yang dipilih untuk kelas khusus
+            if (studentSubjects.length > 0) {
+              const subjectMatch = studentSubjects.some(subj => {
+                if (!subj) return false;
+                return rowSubject.includes(subj) || subj.includes(rowSubject);
+              });
+              if (!subjectMatch) return false;
+            }
+
+            return true;
           }
-
-          // 4. Check Mata Pelajaran yang dipilih
-          const rowSubjectRaw = row.mata_pelajaran || row.mapel || row.subject || row.nama_mapel || row.pelajaran;
-          const rowSubject = normalize(rowSubjectRaw);
-
-          if (!rowSubject || rowSubject === 'mata pelajaran' || rowSubject === '-') {
-            return false;
-          }
-
-          if (studentSubjects.length > 0) {
-            const subjectMatch = studentSubjects.some(subj => {
-              if (!subj) return false;
-              return rowSubject.includes(subj) || subj.includes(rowSubject);
-            });
-            if (!subjectMatch) return false;
-          }
-
-          return true;
         };
 
         let filteredRegSchedules = rawRegSchedules.filter((row: any) => isScheduleMatch(row, 'Reguler'));
