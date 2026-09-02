@@ -173,7 +173,41 @@ export function findMatchingRowForUpdate(
   return rows.find((row) => filters.every((filter) => matchesFilter(row, filter))) ?? null;
 }
 
+const CLIENT_CACHE_TTL_MS = 3 * 60 * 1000; // 3 minutes client TTL
+const clientQueryCache = new Map<string, { data: any; timestamp: number }>();
+
+export function invalidateClientD1Cache(tableName?: string) {
+  if (!tableName) {
+    clientQueryCache.clear();
+    return;
+  }
+  const norm = normalizeTableName(tableName);
+  for (const key of clientQueryCache.keys()) {
+    if (key.includes(`/db/${norm}`)) {
+      clientQueryCache.delete(key);
+    }
+  }
+}
+
 async function readJson<T = any>(url: string, init?: RequestInit): Promise<T> {
+  const method = (init?.method || 'GET').toUpperCase();
+  const isGet = method === 'GET';
+
+  if (isGet) {
+    const cached = clientQueryCache.get(url);
+    if (cached && Date.now() - cached.timestamp < CLIENT_CACHE_TTL_MS) {
+      return cached.data as T;
+    }
+  } else {
+    // On write operations, invalidate client cache for table
+    const match = url.match(/\/db\/([^/?]+)/);
+    if (match) {
+      invalidateClientD1Cache(match[1]);
+    } else {
+      invalidateClientD1Cache();
+    }
+  }
+
   const response = await fetch(url, init);
   const text = await response.text();
   if (!text) {
@@ -181,7 +215,11 @@ async function readJson<T = any>(url: string, init?: RequestInit): Promise<T> {
   }
 
   try {
-    return JSON.parse(text) as T;
+    const parsed = JSON.parse(text) as T;
+    if (isGet && response.ok) {
+      clientQueryCache.set(url, { data: parsed, timestamp: Date.now() });
+    }
+    return parsed;
   } catch {
     return { raw: text } as T;
   }

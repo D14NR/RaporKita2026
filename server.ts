@@ -12,24 +12,82 @@ async function startServer() {
 
   app.use(express.json());
 
+  // Server-side response cache for D1 proxy GET requests to minimize D1 read usage
+  const d1ServerCache = new Map<string, { data: string; contentType: string; status: number; timestamp: number }>();
+  const SERVER_CACHE_TTL_MS = 3 * 60 * 1000; // 3 minutes TTL
+
+  function clearD1ServerCache(urlPath?: string) {
+    if (!urlPath) {
+      d1ServerCache.clear();
+      return;
+    }
+    const match = urlPath.match(/\/db\/([^/?]+)/);
+    if (match) {
+      const tableName = match[1];
+      for (const key of d1ServerCache.keys()) {
+        if (key.includes(`/db/${tableName}`)) {
+          d1ServerCache.delete(key);
+        }
+      }
+    } else {
+      d1ServerCache.clear();
+    }
+  }
+
   // API routes
   app.use("/api/d1", async (req, res) => {
-    const d1Url = `https://raporkita-db.dianrizkisofiawan0431.workers.dev${req.url}`;
-    try {
-      const fetchOpts: RequestInit = {
-        method: req.method,
-        headers: {
-          'Accept': 'application/json',
-          'Content-Type': req.headers['content-type'] as string || 'application/json'
+    const urlPath = req.url;
+    const d1Url = `https://raporkita-db.dianrizkisofiawan0431.workers.dev${urlPath}`;
+
+    // On mutation (POST, PUT, DELETE, etc.), clear server cache and pass request to D1
+    if (req.method !== 'GET' && req.method !== 'HEAD') {
+      clearD1ServerCache(urlPath);
+      try {
+        const fetchOpts: RequestInit = {
+          method: req.method,
+          headers: {
+            'Accept': 'application/json',
+            'Content-Type': (req.headers['content-type'] as string) || 'application/json'
+          }
+        };
+        if (req.body && Object.keys(req.body).length > 0) {
+          fetchOpts.body = JSON.stringify(req.body);
         }
-      };
-      if (req.method !== 'GET' && req.method !== 'HEAD') {
-        fetchOpts.body = JSON.stringify(req.body);
+        const response = await fetch(d1Url, fetchOpts);
+        const data = await response.text();
+        res.status(response.status).set('Content-Type', response.headers.get('content-type') || 'application/json').send(data);
+      } catch (error: any) {
+        console.error('D1 Proxy Error:', error);
+        res.status(500).json({ success: false, message: error.message });
       }
-      
-      const response = await fetch(d1Url, fetchOpts);
+      return;
+    }
+
+    // For GET requests, check cache
+    const cacheKey = urlPath;
+    const now = Date.now();
+    const cached = d1ServerCache.get(cacheKey);
+
+    if (cached && (now - cached.timestamp < SERVER_CACHE_TTL_MS)) {
+      res.status(cached.status).set('Content-Type', cached.contentType).send(cached.data);
+      return;
+    }
+
+    try {
+      const response = await fetch(d1Url, {
+        method: 'GET',
+        headers: {
+          'Accept': 'application/json'
+        }
+      });
+      const contentType = response.headers.get('content-type') || 'application/json';
       const data = await response.text();
-      res.status(response.status).set('Content-Type', response.headers.get('content-type') || 'application/json').send(data);
+
+      if (response.ok) {
+        d1ServerCache.set(cacheKey, { data, contentType, status: response.status, timestamp: now });
+      }
+
+      res.status(response.status).set('Content-Type', contentType).send(data);
     } catch (error: any) {
       console.error('D1 Proxy Error:', error);
       res.status(500).json({ success: false, message: error.message });
