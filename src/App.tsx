@@ -945,9 +945,9 @@ export default function App() {
           queryKhusus = queryKhusus.ilike('cabang', `%${activeCabang}%`);
         }
 
-        // Limit D1 query row count to maintain high speed and prevent heavy database reads
-        queryReg = queryReg.order('class_order', { ascending: true }).limit(300);
-        queryKhusus = queryKhusus.order('tanggal', { ascending: false }).order('class_order', { ascending: true }).limit(300);
+        // Fetch all rows matching the branch to perform robust case-insensitive filtering in memory
+        queryReg = queryReg.order('class_order', { ascending: true });
+        queryKhusus = queryKhusus.order('tanggal', { ascending: false }).order('class_order', { ascending: true });
         
         const [regRes, khususRes] = await Promise.all([queryReg, queryKhusus]);
 
