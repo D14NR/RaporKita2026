@@ -692,7 +692,7 @@ export default function Login({ onLoginSuccess, useD1, dbStatus, onToggleDemoMod
                         setShowSearchModal(false);
                       }}>
                         <div className="min-w-0">
-                          <p className="text-sm font-black text-slate-800 truncate">{siswa.nama}</p>
+                          <p className="text-sm font-black text-slate-800 truncate">{siswa.nama_lengkap || siswa.nama}</p>
                           <p className="text-[10px] font-bold text-slate-500 mt-0.5 truncate">
                             {siswa.cabang} {siswa.asal_sekolah ? `• ${siswa.asal_sekolah}` : ''}
                           </p>
