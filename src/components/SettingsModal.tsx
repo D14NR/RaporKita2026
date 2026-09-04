@@ -16,6 +16,8 @@ import {
   ExternalLink
 } from 'lucide-react';
 import { DataSiswa } from '../types';
+import { PWAInstallModal } from './PWAInstallModal';
+import { usePWAInstall } from '../hooks/usePWAInstall';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -37,10 +39,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onCheckUpdate,
 }) => {
   const [notificationPermission, setNotificationPermission] = useState<string>('default');
-  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
-  const [isStandalone, setIsStandalone] = useState<boolean>(false);
-  const [installSuccess, setInstallSuccess] = useState<boolean>(false);
+  const [showInstallGuideModal, setShowInstallGuideModal] = useState<boolean>(false);
   const [activeSubView, setActiveSubView] = useState<'main' | 'info'>('main');
+  const { isInstallable, isInstalled, install } = usePWAInstall();
 
   useEffect(() => {
     // Check notification permission status
@@ -49,23 +50,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     } else {
       setNotificationPermission('unsupported');
     }
-
-    // Check if app is installed as PWA standalone
-    if (typeof window !== 'undefined') {
-      const isStandaloneMode =
-        window.matchMedia('(display-mode: standalone)').matches ||
-        (window.navigator as any).standalone === true;
-      setIsStandalone(isStandaloneMode);
-    }
-
-    // Capture beforeinstallprompt event for PWA
-    const handleBeforeInstallPrompt = (e: Event) => {
-      e.preventDefault();
-      setDeferredPrompt(e);
-    };
-
-    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
-    return () => window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
   }, []);
 
   if (!isOpen) return null;
@@ -82,15 +66,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   };
 
   const handleInstallApp = async () => {
-    if (deferredPrompt) {
-      deferredPrompt.prompt();
-      const { outcome } = await deferredPrompt.userChoice;
-      if (outcome === 'accepted') {
-        setInstallSuccess(true);
-        setDeferredPrompt(null);
+    if (isInstallable) {
+      const success = await install();
+      if (!success) {
+        setShowInstallGuideModal(true);
       }
     } else {
-      alert('Untuk menginstal aplikasi di HP/Browser:\n1. Buka menu browser (titik tiga di kanan atas)\n2. Pilih "Instal Aplikasi" atau "Tambahkan ke Layar Utama"');
+      setShowInstallGuideModal(true);
     }
   };
 
@@ -181,7 +163,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               </div>
             </div>
 
-            {isStandalone || installSuccess ? (
+            {isInstalled ? (
               <span className="inline-flex items-center gap-1 text-[11px] font-bold bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 px-3 py-1 rounded-xl border border-emerald-200 dark:border-emerald-800 shrink-0">
                 <Check className="h-3.5 w-3.5 text-emerald-500" />
                 Terinstal
@@ -292,6 +274,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         </div>
 
       </div>
+
+      {/* Nested PWA Install Modal Guide */}
+      <PWAInstallModal
+        isOpen={showInstallGuideModal}
+        onClose={() => setShowInstallGuideModal(false)}
+      />
     </div>
   );
 };

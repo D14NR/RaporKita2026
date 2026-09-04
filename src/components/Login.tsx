@@ -16,10 +16,13 @@ import {
   Sparkles,
   Search,
   X,
-  Trash2
+  Trash2,
+  Smartphone,
+  Download
 } from 'lucide-react';
 import { d1 } from '../lib/d1';
 import { DataSiswa } from '../types';
+import { PWAInstallModal } from './PWAInstallModal';
 
 interface LoginProps {
   onLoginSuccess: (student: DataSiswa, fromD1: boolean) => void;
@@ -71,6 +74,7 @@ export default function Login({ onLoginSuccess, useD1, dbStatus, onToggleDemoMod
 
   // Search NIS States
   const [showSearchModal, setShowSearchModal] = useState(false);
+  const [showInstallModal, setShowInstallModal] = useState(false);
   const [searchName, setSearchName] = useState('');
   const [searchCabang, setSearchCabang] = useState('');
   const [searchResult, setSearchResult] = useState<any[] | null>(null);
@@ -556,14 +560,24 @@ export default function Login({ onLoginSuccess, useD1, dbStatus, onToggleDemoMod
               </button>
             </div>
 
-            {/* Clear Cache & History Button with Progress */}
-            <div className="mt-3 pt-3 border-t border-slate-100">
+            {/* PWA & Clear Cache Actions */}
+            <div className="mt-3 pt-3 border-t border-slate-100 space-y-2">
+              <button
+                id="btn-install-pwa-login"
+                type="button"
+                onClick={() => setShowInstallModal(true)}
+                className="w-full flex justify-center items-center gap-2 py-2.5 px-4 border border-indigo-100 dark:border-indigo-900 rounded-2xl shadow-xs text-xs font-bold text-indigo-700 dark:text-indigo-300 bg-indigo-50/80 dark:bg-indigo-950/40 hover:bg-indigo-100 hover:border-indigo-300 focus:outline-none transition-all cursor-pointer"
+              >
+                <Smartphone className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
+                <span>📱 Pasang / Instal Aplikasi (PWA)</span>
+              </button>
+
               <button
                 id="btn-clear-cache"
                 type="button"
                 onClick={handleClearCacheAndHistory}
                 disabled={isLoading || isClearingCache}
-                className="w-full flex justify-center items-center gap-2 py-3 px-4 border border-slate-200 rounded-2xl shadow-sm text-xs font-bold text-slate-700 bg-slate-50 hover:bg-slate-100 hover:border-slate-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-slate-400 disabled:opacity-75 transition-all cursor-pointer"
+                className="w-full flex justify-center items-center gap-2 py-2.5 px-4 border border-slate-200 rounded-2xl shadow-sm text-xs font-bold text-slate-700 bg-slate-50 hover:bg-slate-100 hover:border-slate-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-slate-400 disabled:opacity-75 transition-all cursor-pointer"
               >
                 {isClearingCache ? (
                   <div className="flex items-center gap-2 w-full">
@@ -591,9 +605,14 @@ export default function Login({ onLoginSuccess, useD1, dbStatus, onToggleDemoMod
             </div>
           </form>
 
-
         </div>
       </div>
+
+      {/* PWA Install Modal */}
+      <PWAInstallModal 
+        isOpen={showInstallModal} 
+        onClose={() => setShowInstallModal(false)} 
+      />
 
       {/* Search NIS Modal */}
       {showSearchModal && (

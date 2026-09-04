@@ -1,21 +1,39 @@
 {
-  "short_name": "RaporSiswa",
+  "id": "/",
   "name": "Rapor Siswa Real-time",
+  "short_name": "RaporSiswa",
+  "description": "Aplikasi rapor siswa digital real-time untuk orang tua murid, dilengkapi jadwal, presensi, perkembangan belajar, dan nilai.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#ffffff",
+  "theme_color": "#0284c7",
   "icons": [
     {
-      "src": "/logo.png",
+      "src": "/pwa-192x192.png",
+      "sizes": "192x192",
       "type": "image/png",
-      "sizes": "192x192"
+      "purpose": "any"
+    },
+    {
+      "src": "/pwa-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/pwa-maskable-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
     },
     {
       "src": "/logo.png",
+      "sizes": "512x512",
       "type": "image/png",
-      "sizes": "512x512"
+      "purpose": "any"
     }
   ],
-  "start_url": "/",
-  "background_color": "#ffffff",
-  "theme_color": "#0284c7",
-  "display": "standalone",
-  "orientation": "portrait"
+  "categories": ["education", "productivity"]
 }

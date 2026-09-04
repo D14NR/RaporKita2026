@@ -75,6 +75,8 @@ import { LuarKbmView } from './components/LuarKbmView';
 import { UpdateCheckerModal } from './components/UpdateCheckerModal';
 import { ActiveScheduleAlert } from './components/ActiveScheduleAlert';
 import { PresensiView } from './components/PresensiView';
+import { PWAInstallBanner } from './components/PWAInstallBanner';
+import { PWAInstallModal } from './components/PWAInstallModal';
 import { requestNotificationPermission } from './lib/pushNotifications';
 import { formatScore, roundScore } from './lib/formatUtils';
 
@@ -157,6 +159,7 @@ export default function App() {
   const [isProfileSaving, setIsProfileSaving] = useState(false);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
   const [isNotificationModalOpen, setIsNotificationModalOpen] = useState(false);
+  const [isPWAInstallModalOpen, setIsPWAInstallModalOpen] = useState(false);
   const [unreadNotifCount, setUnreadNotifCount] = useState<number>(0);
 
   const [dataRefreshCounter, setDataRefreshCounter] = useState(0);
@@ -1536,6 +1539,16 @@ export default function App() {
             </button>
 
             <button
+              id="btn-install-pwa-desktop"
+              onClick={() => setIsPWAInstallModalOpen(true)}
+              title="Pasang / Instal Aplikasi (PWA)"
+              className="flex items-center gap-1.5 bg-sky-50 dark:bg-sky-950/60 hover:bg-sky-100 dark:hover:bg-sky-900/60 text-sky-700 dark:text-sky-300 text-xs font-bold py-2 px-3 rounded-xl border border-sky-200/80 dark:border-sky-800 transition duration-150 cursor-pointer"
+            >
+              <Smartphone className="h-4 w-4 shrink-0 text-sky-600 dark:text-sky-400" />
+              <span>Instal App</span>
+            </button>
+
+            <button
               id="btn-notifications-desktop"
               onClick={() => setIsNotificationModalOpen(true)}
               title="Pusat Notifikasi"
@@ -1639,6 +1652,13 @@ export default function App() {
                   <Settings className="h-4 w-4" />
                   Pengaturan
                 </button>
+                <button
+                  onClick={() => { setIsPWAInstallModalOpen(true); setIsMobileMenuOpen(false); }}
+                  className="w-full text-left px-4 py-2 text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 flex items-center gap-2"
+                >
+                  <Smartphone className="h-4 w-4" />
+                  Pasang Aplikasi (PWA)
+                </button>
                 <div className="h-px bg-slate-100 my-1"></div>
                 <button
                   onClick={() => { handleLogout(); setIsMobileMenuOpen(false); }}
@@ -1652,6 +1672,9 @@ export default function App() {
           </div>
         </div>
       </header>
+
+      {/* PWA INSTALL BANNER */}
+      <PWAInstallBanner onOpenGuide={() => setIsPWAInstallModalOpen(true)} />
 
       {/* OFFLINE STATUS BANNER */}
       {!isOnline && (
@@ -2946,6 +2969,12 @@ export default function App() {
         onClose={() => setIsNotificationModalOpen(false)}
         student={selectedStudentData || currentStudent}
         onUnreadCountChange={setUnreadNotifCount}
+      />
+
+      {/* PWA Install Modal */}
+      <PWAInstallModal
+        isOpen={isPWAInstallModalOpen}
+        onClose={() => setIsPWAInstallModalOpen(false)}
       />
 
     </div>

@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bgGradMask" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0284c7" />
+      <stop offset="50%" stop-color="#2563eb" />
+      <stop offset="100%" stop-color="#4f46e5" />
+    </linearGradient>
+    <linearGradient id="goldGradMask" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#fbbf24" />
+      <stop offset="100%" stop-color="#d97706" />
+    </linearGradient>
+  </defs>
+
+  <!-- Full-bleed background for maskable icon -->
+  <rect width="512" height="512" fill="url(#bgGradMask)" />
+
+  <!-- Content scaled inside the safe zone (80% / 64px padding on each side) -->
+  <g transform="translate(51.2, 51.2) scale(0.8)">
+    <rect x="96" y="96" width="320" height="320" rx="36" fill="#ffffff" fill-opacity="0.96" />
+    
+    <path d="M 96 132 C 96 112 112 96 132 96 L 380 96 C 400 96 416 112 416 132 L 416 180 L 96 180 Z" fill="#0284c7" />
+    
+    <polygon points="256,120 336,150 256,180 176,150" fill="#ffffff" />
+    <path d="M 206 165 L 206 195 Q 256 220 306 195 L 306 165 Q 256 185 206 165 Z" fill="#ffffff" />
+    <path d="M 320 155 L 332 185 L 336 210" stroke="#fbbf24" stroke-width="4" stroke-linecap="round" fill="none" />
+    <circle cx="336" cy="214" r="5" fill="#fbbf24" />
+
+    <rect x="140" y="210" width="130" height="18" rx="9" fill="#0284c7" />
+    <circle cx="350" cy="219" r="14" fill="url(#goldGradMask)" />
+    <polygon points="350,210 353,216 360,217 355,221 357,228 350,224 343,228 345,221 340,217 347,216" fill="#ffffff" />
+
+    <rect x="140" y="250" width="232" height="12" rx="6" fill="#e2e8f0" />
+    <rect x="140" y="250" width="190" height="12" rx="6" fill="#3b82f6" />
+    
+    <rect x="140" y="278" width="232" height="12" rx="6" fill="#e2e8f0" />
+    <rect x="140" y="278" width="215" height="12" rx="6" fill="#10b981" />
+
+    <rect x="140" y="306" width="232" height="12" rx="6" fill="#e2e8f0" />
+    <rect x="140" y="306" width="170" height="12" rx="6" fill="#8b5cf6" />
+
+    <circle cx="160" cy="360" r="16" fill="#10b981" />
+    <path d="M 152 360 L 158 366 L 169 354" stroke="#ffffff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" fill="none" />
+
+    <rect x="188" y="352" width="184" height="16" rx="8" fill="#cbd5e1" />
+  </g>
+</svg>
