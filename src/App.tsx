@@ -800,9 +800,14 @@ export default function App() {
           const progressRows = Array.isArray(pbRes.data) ? pbRes.data : [];
 
           // Map to AttendanceRecords
-          // Baris perkembangan tanpa kolom kehadiran tidak boleh dihitung sebagai Hadir.
+          // Baris perkembangan tanpa kolom kehadiran atau tanpa tanggal valid (>= 2000) tidak boleh masuk ke log presensi.
           const mappedAttendance: Attendance[] = progressRows
-            .filter((row: any) => String(row.kehadiran ?? '').trim().length > 0)
+            .filter((row: any) => {
+              const hasKehadiran = String(row.kehadiran ?? '').trim().length > 0;
+              const parsedDate = parseDateSafe(row.tanggal);
+              const isValidDate = parsedDate !== null && parsedDate.getFullYear() >= 2000;
+              return hasKehadiran && isValidDate;
+            })
             .map((row: any) => {
             let status: 'Hadir' | 'Sakit' | 'Izin' | 'Alpa' | 'Alpha' = 'Hadir';
             const rawKehadiran = (row.kehadiran || '').trim().toLowerCase();
@@ -917,8 +922,12 @@ export default function App() {
       // Load from cache first
       const cachedReg = localStorage.getItem(`kbm_reguler_${selectedStudentId}`);
       const cachedKhusus = localStorage.getItem(`kbm_khusus_${selectedStudentId}`);
-      if (cachedReg) setRegularSchedules(JSON.parse(cachedReg).filter((item: any) => isThisOrNextMonth(item.tanggal)));
-      if (cachedKhusus) setAdditionalSchedules(JSON.parse(cachedKhusus).filter((item: any) => isThisOrNextMonth(item.tanggal)));
+      if (cachedReg) {
+        try { setRegularSchedules(JSON.parse(cachedReg)); } catch (_) {}
+      }
+      if (cachedKhusus) {
+        try { setAdditionalSchedules(JSON.parse(cachedKhusus)); } catch (_) {}
+      }
       
       setIsKbmLoading(true);
       try {
@@ -936,9 +945,9 @@ export default function App() {
           queryKhusus = queryKhusus.ilike('cabang', `%${activeCabang}%`);
         }
 
-        // Fetch all recent rows for the branch and do robust case-insensitive filtering in JS
-        queryReg = queryReg.order('class_order', { ascending: true });
-        queryKhusus = queryKhusus.order('tanggal', { ascending: false }).order('class_order', { ascending: true });
+        // Limit D1 query row count to maintain high speed and prevent heavy database reads
+        queryReg = queryReg.order('class_order', { ascending: true }).limit(300);
+        queryKhusus = queryKhusus.order('tanggal', { ascending: false }).order('class_order', { ascending: true }).limit(300);
         
         const [regRes, khususRes] = await Promise.all([queryReg, queryKhusus]);
 
@@ -1151,10 +1160,6 @@ export default function App() {
             kelas: row.kelompok_kelas || row.kelas
           };
         });
-
-        // Only show schedule for this month and next month
-        mappedRegSchedules = mappedRegSchedules.filter(item => isThisOrNextMonth(item.tanggal));
-        mappedKhususSchedules = mappedKhususSchedules.filter(item => isThisOrNextMonth(item.tanggal));
 
         // Deduplicate schedules with identical subject, time, teacher, day/date, and class
         const dedupeList = <T extends { subject: string; time_start?: string; time_end?: string; teacher?: string; day?: string; tanggal?: string; kelas?: string }>(list: T[]): T[] => {

@@ -230,6 +230,7 @@ class D1Query {
   private filters: Array<{ column: string; op: 'eq' | 'in' | 'ilike'; value: any }> = [];
   private orders: Array<{ column: string; ascending: boolean }> = [];
   private limitValue?: number;
+  private offsetValue?: number;
   private singleResult = false;
   private op: 'read' | 'insert' | 'update' | 'delete' | 'upsert' = 'read';
   private insertRows: any[] = [];
@@ -265,7 +266,34 @@ class D1Query {
   }
 
   limit(value: number) {
-    this.limitValue = value;
+    this.limitValue = Math.max(0, value);
+    return this;
+  }
+
+  offset(value: number) {
+    this.offsetValue = Math.max(0, value);
+    return this;
+  }
+
+  /**
+   * Helper pagination: pageNumber is 1-indexed (1, 2, 3...)
+   */
+  page(pageNumber: number, pageSize = 20) {
+    const validPage = Math.max(1, pageNumber);
+    const validSize = Math.max(1, pageSize);
+    this.limitValue = validSize;
+    this.offsetValue = (validPage - 1) * validSize;
+    return this;
+  }
+
+  /**
+   * Range selection from index to index (0-indexed inclusive)
+   */
+  range(from: number, to: number) {
+    const validFrom = Math.max(0, from);
+    const validTo = Math.max(validFrom, to);
+    this.offsetValue = validFrom;
+    this.limitValue = validTo - validFrom + 1;
     return this;
   }
 
@@ -351,6 +379,10 @@ class D1Query {
         });
       }
 
+      if (this.offsetValue && Number.isFinite(this.offsetValue) && this.offsetValue > 0) {
+        nextRows = nextRows.slice(this.offsetValue);
+      }
+
       if (this.limitValue && Number.isFinite(this.limitValue)) {
         nextRows = nextRows.slice(0, this.limitValue);
       }
@@ -373,6 +405,9 @@ class D1Query {
       if (this.orders.length > 0) {
         params.set('order', this.orders[0].column);
         params.set('ascending', String(this.orders[0].ascending));
+      }
+      if (this.offsetValue && Number.isFinite(this.offsetValue) && this.offsetValue > 0) {
+        params.set('offset', String(this.offsetValue));
       }
       if (this.limitValue && Number.isFinite(this.limitValue)) {
         params.set('limit', String(this.limitValue));

@@ -102,6 +102,9 @@ export const PresensiView: React.FC<PresensiViewProps> = ({
   // Filtered records
   const filteredRecords = useMemo(() => {
     return attendanceRecords.filter(item => {
+      const parsedDate = parseDateSafe(item.date);
+      if (!parsedDate || parsedDate.getFullYear() < 2000) return false;
+
       const matchesStatus = selectedStatus === 'ALL' || item.status === selectedStatus;
       const matchesSubject = selectedSubject === 'ALL' || item.subject === selectedSubject;
       const q = searchQuery.toLowerCase().trim();

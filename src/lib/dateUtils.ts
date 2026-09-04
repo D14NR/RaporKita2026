@@ -42,26 +42,44 @@ const INDO_MONTH_MAP: Record<string, number> = {
  * Parses a date input safely into a Date object without timezone offset bugs for YYYY-MM-DD.
  */
 export function parseDateSafe(input: string | Date | number | null | undefined): Date | null {
-  if (!input) return null;
-  if (input instanceof Date) return isNaN(input.getTime()) ? null : input;
+  if (!input && input !== 0) return null;
+  if (input instanceof Date) {
+    if (isNaN(input.getTime()) || input.getFullYear() < 2000) return null;
+    return input;
+  }
   if (typeof input === 'number') {
+    if (input <= 86400000) return null; // 0 or epoch zero
     const d = new Date(input);
-    return isNaN(d.getTime()) ? null : d;
+    return isNaN(d.getTime()) || d.getFullYear() < 2000 ? null : d;
   }
 
   const str = String(input).trim();
-  if (!str || str === 'No Date' || str === '-') return null;
+  if (
+    !str ||
+    str === '0' ||
+    str === 'No Date' ||
+    str === '-' ||
+    str === 'null' ||
+    str === 'undefined' ||
+    str.startsWith('0000-00-00') ||
+    str.startsWith('1970-01-01') ||
+    str.startsWith('1970-01-02')
+  ) {
+    return null;
+  }
 
   // 1. Handle YYYY-MM-DD or YYYY-MM-DD HH:mm:ss or YYYY-MM-DDTHH:mm:ss
   const ymdMatch = str.match(/^(\d{4})[/-](\d{1,2})[/-](\d{1,2})(?:[\sT]+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?/);
   if (ymdMatch) {
     const year = parseInt(ymdMatch[1], 10);
+    if (year < 2000) return null; // Reject 1970 or corrupted years
     const month = parseInt(ymdMatch[2], 10) - 1;
     const day = parseInt(ymdMatch[3], 10);
     const hour = ymdMatch[4] !== undefined ? parseInt(ymdMatch[4], 10) : 0;
     const minute = ymdMatch[5] !== undefined ? parseInt(ymdMatch[5], 10) : 0;
     const second = ymdMatch[6] !== undefined ? parseInt(ymdMatch[6], 10) : 0;
-    return new Date(year, month, day, hour, minute, second);
+    const res = new Date(year, month, day, hour, minute, second);
+    return isNaN(res.getTime()) ? null : res;
   }
 
   // 2. Handle DD-MM-YYYY or DD/MM/YYYY or DD.MM.YYYY
@@ -70,10 +88,12 @@ export function parseDateSafe(input: string | Date | number | null | undefined):
     const day = parseInt(dmyMatch[1], 10);
     const month = parseInt(dmyMatch[2], 10) - 1;
     const year = parseInt(dmyMatch[3], 10);
+    if (year < 2000) return null;
     const hour = dmyMatch[4] !== undefined ? parseInt(dmyMatch[4], 10) : 0;
     const minute = dmyMatch[5] !== undefined ? parseInt(dmyMatch[5], 10) : 0;
     const second = dmyMatch[6] !== undefined ? parseInt(dmyMatch[6], 10) : 0;
-    return new Date(year, month, day, hour, minute, second);
+    const res = new Date(year, month, day, hour, minute, second);
+    return isNaN(res.getTime()) ? null : res;
   }
 
   // 3. Handle Text dates like "28 Agustus 2026", "Jumat, 28 Agustus 2026", "28-Ags-2026"
@@ -83,12 +103,14 @@ export function parseDateSafe(input: string | Date | number | null | undefined):
     const monthStr = textDateMatch[2].toLowerCase();
     let year = parseInt(textDateMatch[3], 10);
     if (year < 100) year += 2000;
+    if (year < 2000) return null;
     const hour = textDateMatch[5] !== undefined ? parseInt(textDateMatch[5], 10) : 0;
     const minute = textDateMatch[6] !== undefined ? parseInt(textDateMatch[6], 10) : 0;
     const second = textDateMatch[7] !== undefined ? parseInt(textDateMatch[7], 10) : 0;
 
     if (INDO_MONTH_MAP[monthStr] !== undefined) {
-      return new Date(year, INDO_MONTH_MAP[monthStr], day, hour, minute, second);
+      const res = new Date(year, INDO_MONTH_MAP[monthStr], day, hour, minute, second);
+      return isNaN(res.getTime()) ? null : res;
     }
   }
 
@@ -98,14 +120,17 @@ export function parseDateSafe(input: string | Date | number | null | undefined):
     const monthStr = monthFirstMatch[1].toLowerCase();
     const day = parseInt(monthFirstMatch[2], 10);
     const year = parseInt(monthFirstMatch[3], 10);
+    if (year < 2000) return null;
     if (INDO_MONTH_MAP[monthStr] !== undefined) {
-      return new Date(year, INDO_MONTH_MAP[monthStr], day);
+      const res = new Date(year, INDO_MONTH_MAP[monthStr], day);
+      return isNaN(res.getTime()) ? null : res;
     }
   }
 
   // 5. Fallback to standard Date constructor
   const parsed = new Date(str);
-  return isNaN(parsed.getTime()) ? null : parsed;
+  if (isNaN(parsed.getTime()) || parsed.getFullYear() < 2000) return null;
+  return parsed;
 }
 
 /**

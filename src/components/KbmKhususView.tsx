@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   GraduationCap,
   Calendar,
@@ -9,10 +9,17 @@ import {
   Filter,
   Activity,
   AlertCircle,
-  Users
+  Users,
+  History,
+  Layers,
+  Database,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight
 } from 'lucide-react';
 import { AdditionalSchedule, Student, DataSiswa } from '../types';
-import { formatTanggalIndo, parseDateSafe, compareScheduleDates } from '../lib/dateUtils';
+import { formatTanggalIndo, parseDateSafe, compareScheduleDates, MONTHS_INDO } from '../lib/dateUtils';
 
 interface KbmKhususViewProps {
   currentStudent: DataSiswa | Student | null;
@@ -33,6 +40,10 @@ export const KbmKhususView: React.FC<KbmKhususViewProps> = ({
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'AKTIF' | 'SELESAI'>('ALL');
+  const [periodFilter, setPeriodFilter] = useState<'ACTIVE' | 'HISTORY' | 'ALL'>('ACTIVE');
+  const [selectedMonth, setSelectedMonth] = useState<string>('ALL');
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const [itemsPerPage, setItemsPerPage] = useState<number>(6);
 
   const studentData = selectedStudentData || currentStudent;
   const studentName = (studentData as DataSiswa)?.nama || (studentData as Student)?.name || 'Siswa';
@@ -41,20 +52,57 @@ export const KbmKhususView: React.FC<KbmKhususViewProps> = ({
   const studentSekolah = (studentData as DataSiswa)?.asal_sekolah || '-';
   const studentJenjang = (studentData as DataSiswa)?.jenjang_studi || (studentData as Student)?.class || '-';
 
-  // Filter schedules for current and next month
-  const activeSchedules = useMemo(() => {
-    return additionalSchedules.filter(item => isThisOrNextMonth(item.tanggal));
-  }, [additionalSchedules, isThisOrNextMonth]);
+  // Extract available months for historical filtering
+  const availableMonths = useMemo(() => {
+    const monthsMap = new Map<string, string>();
+    additionalSchedules.forEach(item => {
+      if (!item.tanggal) return;
+      const d = parseDateSafe(item.tanggal);
+      if (d) {
+        const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+        if (!monthsMap.has(ym)) {
+          const monthName = MONTHS_INDO[d.getMonth()];
+          monthsMap.set(ym, `${monthName} ${d.getFullYear()}`);
+        }
+      }
+    });
+    return Array.from(monthsMap.entries())
+      .sort((a, b) => b[0].localeCompare(a[0]))
+      .map(([value, label]) => ({ value, label }));
+  }, [additionalSchedules]);
 
-  // Stats calculation
+  // Filter schedules by period and specific month
+  const scopedSchedules = useMemo(() => {
+    return additionalSchedules.filter(item => {
+      // 1. Period Scope
+      if (periodFilter === 'ACTIVE') {
+        if (!isThisOrNextMonth(item.tanggal)) return false;
+      } else if (periodFilter === 'HISTORY') {
+        if (isThisOrNextMonth(item.tanggal)) return false;
+      }
+
+      // 2. Specific Month filter
+      if (selectedMonth !== 'ALL') {
+        if (!item.tanggal) return false;
+        const d = parseDateSafe(item.tanggal);
+        if (!d) return false;
+        const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+        if (ym !== selectedMonth) return false;
+      }
+
+      return true;
+    });
+  }, [additionalSchedules, periodFilter, selectedMonth, isThisOrNextMonth]);
+
+  // Stats calculation based on current scope
   const stats = useMemo(() => {
-    const total = activeSchedules.length;
+    const total = scopedSchedules.length;
     if (total === 0) return { total: 0, aktif: 0, selesai: 0 };
 
     let aktif = 0;
     let selesai = 0;
 
-    activeSchedules.forEach(item => {
+    scopedSchedules.forEach(item => {
       const finished = isScheduleFinished(item);
       if (finished || item.status === 'Selesai') {
         selesai += 1;
@@ -64,11 +112,11 @@ export const KbmKhususView: React.FC<KbmKhususViewProps> = ({
     });
 
     return { total, aktif, selesai };
-  }, [activeSchedules, isScheduleFinished]);
+  }, [scopedSchedules, isScheduleFinished]);
 
   // Filtered and sorted schedules
   const filteredSchedules = useMemo(() => {
-    return activeSchedules
+    return scopedSchedules
       .filter(item => {
         const q = searchQuery.toLowerCase().trim();
         const matchesQuery = !q ||
@@ -87,16 +135,31 @@ export const KbmKhususView: React.FC<KbmKhususViewProps> = ({
         return true;
       })
       .sort((a, b) => {
-        // Prioritize today at the top, then upcoming dates, then past dates
-        const dateComp = compareScheduleDates(a.tanggal, b.tanggal);
-        if (dateComp !== 0) return dateComp;
+        if (periodFilter === 'HISTORY') {
+          const dateComp = compareScheduleDates(b.tanggal, a.tanggal);
+          if (dateComp !== 0) return dateComp;
+        } else {
+          const dateComp = compareScheduleDates(a.tanggal, b.tanggal);
+          if (dateComp !== 0) return dateComp;
+        }
 
-        // Then by start time
         const timeA = a.time_start || '';
         const timeB = b.time_start || '';
         return timeA.localeCompare(timeB);
       });
-  }, [activeSchedules, searchQuery, statusFilter, isScheduleFinished]);
+  }, [scopedSchedules, searchQuery, statusFilter, isScheduleFinished, periodFilter]);
+
+  // Pagination calculation
+  const totalPages = Math.max(1, Math.ceil(filteredSchedules.length / itemsPerPage));
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, statusFilter, periodFilter, selectedMonth, itemsPerPage]);
+
+  const paginatedSchedules = useMemo(() => {
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    return filteredSchedules.slice(startIndex, startIndex + itemsPerPage);
+  }, [filteredSchedules, currentPage, itemsPerPage]);
 
   return (
     <div id="view-kbm-khusus-modern" className="space-y-6">
@@ -141,7 +204,9 @@ export const KbmKhususView: React.FC<KbmKhususViewProps> = ({
           {/* Total Jadwal */}
           <div className="bg-white/5 backdrop-blur-sm p-4 rounded-2xl border border-white/10 flex flex-col justify-between hover:bg-white/10 transition">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-slate-300">Total KBM Khusus</span>
+              <span className="text-xs font-semibold text-slate-300">
+                {periodFilter === 'ACTIVE' ? 'Total Sesi Aktif' : periodFilter === 'HISTORY' ? 'Total Sesi Historis' : 'Semua KBM Khusus'}
+              </span>
               <div className="p-1.5 rounded-lg bg-indigo-500/20 text-indigo-300">
                 <GraduationCap className="h-4 w-4" />
               </div>
@@ -151,7 +216,9 @@ export const KbmKhususView: React.FC<KbmKhususViewProps> = ({
                 <span className="text-2xl sm:text-3xl font-black text-white">{stats.total}</span>
                 <span className="text-[11px] text-slate-400 font-medium">Sesi</span>
               </div>
-              <div className="mt-1 text-[10px] text-slate-300 font-medium">Terdaftar</div>
+              <div className="mt-1 text-[10px] text-slate-300 font-medium">
+                {periodFilter === 'ACTIVE' ? 'Bulan ini & depan' : periodFilter === 'HISTORY' ? 'Riwayat lampau' : 'Terdaftar'}
+              </div>
             </div>
           </div>
 
@@ -191,7 +258,79 @@ export const KbmKhususView: React.FC<KbmKhususViewProps> = ({
         </div>
       </div>
 
-      {/* 3. Toolbar: Search & Filters */}
+      {/* 3. Navigation Tabs: Active vs History vs All */}
+      <div className="flex flex-wrap items-center justify-between gap-3 bg-white dark:bg-slate-800 p-2.5 rounded-2xl border border-slate-200/80 dark:border-slate-700/80 shadow-xs">
+        <div className="flex items-center gap-1.5 overflow-x-auto">
+          <button
+            id="tab-kbm-khusus-active"
+            onClick={() => { setPeriodFilter('ACTIVE'); setSelectedMonth('ALL'); }}
+            className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition cursor-pointer ${
+              periodFilter === 'ACTIVE'
+                ? 'bg-indigo-600 text-white shadow-sm'
+                : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700/60'
+            }`}
+          >
+            <Calendar className="h-4 w-4" />
+            <span>Jadwal Aktif</span>
+            <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/20">
+              Bulan Ini & Depan
+            </span>
+          </button>
+
+          <button
+            id="tab-kbm-khusus-history"
+            onClick={() => { setPeriodFilter('HISTORY'); setSelectedMonth('ALL'); }}
+            className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition cursor-pointer ${
+              periodFilter === 'HISTORY'
+                ? 'bg-purple-600 text-white shadow-sm'
+                : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700/60'
+            }`}
+          >
+            <History className="h-4 w-4" />
+            <span>Riwayat Historis</span>
+            <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/20">
+              Lampau
+            </span>
+          </button>
+
+          <button
+            id="tab-kbm-khusus-all"
+            onClick={() => { setPeriodFilter('ALL'); setSelectedMonth('ALL'); }}
+            className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition cursor-pointer ${
+              periodFilter === 'ALL'
+                ? 'bg-slate-900 text-white shadow-sm'
+                : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700/60'
+            }`}
+          >
+            <Layers className="h-4 w-4" />
+            <span>Semua Jadwal</span>
+          </button>
+        </div>
+
+        {/* Month Selector for quick jump */}
+        {availableMonths.length > 0 && (
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 hidden sm:inline">
+              Pilih Bulan:
+            </span>
+            <select
+              id="select-kbm-khusus-month"
+              value={selectedMonth}
+              onChange={(e) => setSelectedMonth(e.target.value)}
+              className="px-3 py-1.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            >
+              <option value="ALL">Semua Bulan ({availableMonths.length})</option>
+              {availableMonths.map((m) => (
+                <option key={m.value} value={m.value}>
+                  {m.label}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+      </div>
+
+      {/* 4. Toolbar: Search & Filters */}
       <div className="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200/80 dark:border-slate-700/80 shadow-xs flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
         {/* Search Input */}
         <div className="relative flex-1">
@@ -209,7 +348,7 @@ export const KbmKhususView: React.FC<KbmKhususViewProps> = ({
         <div className="flex items-center gap-1.5 bg-slate-100 dark:bg-slate-900 p-1.5 rounded-2xl border border-slate-200/60 dark:border-slate-700/80 overflow-x-auto">
           <button
             onClick={() => setStatusFilter('ALL')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition whitespace-nowrap ${
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition whitespace-nowrap cursor-pointer ${
               statusFilter === 'ALL'
                 ? 'bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 shadow-xs'
                 : 'text-slate-600 dark:text-slate-400 hover:text-slate-800'
@@ -219,7 +358,7 @@ export const KbmKhususView: React.FC<KbmKhususViewProps> = ({
           </button>
           <button
             onClick={() => setStatusFilter('AKTIF')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition whitespace-nowrap ${
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition whitespace-nowrap cursor-pointer ${
               statusFilter === 'AKTIF'
                 ? 'bg-white dark:bg-slate-800 text-emerald-600 dark:text-emerald-400 shadow-xs'
                 : 'text-slate-600 dark:text-slate-400 hover:text-slate-800'
@@ -229,7 +368,7 @@ export const KbmKhususView: React.FC<KbmKhususViewProps> = ({
           </button>
           <button
             onClick={() => setStatusFilter('SELESAI')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition whitespace-nowrap ${
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition whitespace-nowrap cursor-pointer ${
               statusFilter === 'SELESAI'
                 ? 'bg-white dark:bg-slate-800 text-sky-600 dark:text-sky-400 shadow-xs'
                 : 'text-slate-600 dark:text-slate-400 hover:text-slate-800'
@@ -238,28 +377,49 @@ export const KbmKhususView: React.FC<KbmKhususViewProps> = ({
             Selesai ({stats.selesai})
           </button>
         </div>
+
+        {/* Page Size Selector */}
+        <div className="flex items-center gap-2 self-end md:self-auto shrink-0">
+          <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+            Per Halaman:
+          </span>
+          <select
+            value={itemsPerPage}
+            onChange={(e) => setItemsPerPage(Number(e.target.value))}
+            className="px-2.5 py-1.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-200 focus:outline-none"
+          >
+            <option value={6}>6 sesi</option>
+            <option value={12}>12 sesi</option>
+            <option value={24}>24 sesi</option>
+          </select>
+        </div>
       </div>
 
-      {/* 4. Notice / School details */}
+      {/* 5. Notice / School details */}
       <div className="bg-indigo-50 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-800/80 rounded-2xl p-4 flex items-center justify-between flex-wrap gap-4">
         <div className="flex items-center gap-3">
           <div className="p-2.5 rounded-xl bg-indigo-100 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400 shrink-0">
             <GraduationCap className="h-5 w-5" />
           </div>
           <div>
-            <p className="text-xs font-bold text-indigo-900 dark:text-indigo-200">Informasi Cabang, Jenjang & Asal Sekolah</p>
-            <p className="text-[11px] text-indigo-700 dark:text-indigo-300">Menampilkan jadwal KBM Khusus untuk Cabang <strong className="font-bold">{studentCabang}</strong>, Jenjang <strong className="font-bold">{studentJenjang}</strong>, dan Asal Sekolah <strong className="font-bold">{studentSekolah}</strong>.</p>
+            <p className="text-xs font-bold text-indigo-900 dark:text-indigo-200">
+              {periodFilter === 'ACTIVE' ? 'Jadwal Aktif KBM Khusus' : periodFilter === 'HISTORY' ? 'Riwayat Historis KBM Khusus' : 'Seluruh Arsip KBM Khusus'}
+            </p>
+            <p className="text-[11px] text-indigo-700 dark:text-indigo-300">
+              Cabang <strong className="font-bold">{studentCabang}</strong> • Jenjang <strong className="font-bold">{studentJenjang}</strong> • Asal Sekolah <strong className="font-bold">{studentSekolah}</strong>
+            </p>
           </div>
         </div>
-        <span className="bg-indigo-100 dark:bg-indigo-900/60 text-indigo-800 dark:text-indigo-300 text-xs font-bold px-3 py-1.5 rounded-xl border border-indigo-200 dark:border-indigo-800 flex items-center gap-1.5">
-          <Clock className="h-4 w-4 text-indigo-500" />
-          Program Khusus Opsional
-        </span>
+        
+        <div className="flex items-center gap-2 bg-white/80 dark:bg-slate-800/80 px-3 py-1.5 rounded-xl border border-indigo-200/60 dark:border-indigo-800/60 text-xs font-bold text-indigo-800 dark:text-indigo-300">
+          <Database className="h-3.5 w-3.5 text-indigo-600" />
+          <span>Halaman {currentPage} dari {totalPages} ({filteredSchedules.length} sesi)</span>
+        </div>
       </div>
 
-      {/* 5. Schedule Cards */}
+      {/* 6. Schedule Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {filteredSchedules.map((item, idx) => {
+        {paginatedSchedules.map((item, idx) => {
           const isFinished = isScheduleFinished(item) || item.status === 'Selesai';
           return (
             <div key={item.id || idx} className="bg-white dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700/80 rounded-3xl p-5 flex items-start gap-4 shadow-xs hover:shadow-md transition duration-200">
@@ -339,13 +499,116 @@ export const KbmKhususView: React.FC<KbmKhususViewProps> = ({
             <div className="p-4 rounded-full bg-slate-100 dark:bg-slate-700 mx-auto w-fit">
               <GraduationCap className="h-8 w-8 text-slate-400" />
             </div>
-            <h4 className="text-sm font-bold text-slate-700 dark:text-slate-300">Tidak Ada Jadwal KBM Khusus</h4>
+            <h4 className="text-sm font-bold text-slate-700 dark:text-slate-300">
+              {periodFilter === 'HISTORY' ? 'Tidak Ada Riwayat Jadwal KBM Khusus' : 'Tidak Ada Jadwal KBM Khusus'}
+            </h4>
             <p className="text-xs text-slate-500 dark:text-slate-400 max-w-sm mx-auto">
-              {searchQuery ? 'Tidak ada jadwal yang cocok dengan kata kunci pencarian Anda.' : `Jadwal tidak ditemukan untuk Cabang ${studentCabang}, Jenjang ${studentJenjang}, dan Asal Sekolah ${studentSekolah}.`}
+              {searchQuery
+                ? 'Tidak ada jadwal yang cocok dengan kata kunci pencarian Anda.'
+                : periodFilter === 'HISTORY'
+                ? 'Belum ada catatan jadwal KBM khusus masa lampau.'
+                : `Jadwal tidak ditemukan untuk Cabang ${studentCabang}, Jenjang ${studentJenjang}, dan Asal Sekolah ${studentSekolah}.`}
             </p>
           </div>
         )}
       </div>
+
+      {/* 7. Pagination Controls */}
+      {totalPages > 1 && (
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200/80 dark:border-slate-700/80 shadow-xs overflow-hidden">
+          {/* Summary Text */}
+          <div className="text-xs text-slate-500 dark:text-slate-400 font-medium text-center sm:text-left">
+            Menampilkan sesi <strong className="text-slate-800 dark:text-slate-200">{(currentPage - 1) * itemsPerPage + 1}</strong>–
+            <strong className="text-slate-800 dark:text-slate-200">{Math.min(currentPage * itemsPerPage, filteredSchedules.length)}</strong> dari{' '}
+            <strong className="text-slate-800 dark:text-slate-200">{filteredSchedules.length}</strong> sesi
+          </div>
+
+          {/* Controls Group */}
+          <div className="flex items-center justify-center gap-1 sm:gap-1.5 flex-wrap">
+            {/* First Page (Desktop only) */}
+            <button
+              id="btn-pagination-khusus-first"
+              onClick={() => setCurrentPage(1)}
+              disabled={currentPage === 1}
+              title="Halaman Pertama"
+              className="hidden sm:inline-flex items-center justify-center w-8 h-8 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 disabled:opacity-30 disabled:cursor-not-allowed transition cursor-pointer"
+            >
+              <ChevronsLeft className="h-4 w-4" />
+            </button>
+
+            {/* Prev Page */}
+            <button
+              id="btn-pagination-khusus-prev"
+              onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+              disabled={currentPage === 1}
+              title="Halaman Sebelumnya"
+              className="flex items-center justify-center w-8 h-8 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 disabled:opacity-30 disabled:cursor-not-allowed transition cursor-pointer"
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </button>
+
+            {/* Mobile Page Indicator Pill */}
+            <div className="inline-flex sm:hidden items-center px-3 h-8 bg-slate-100 dark:bg-slate-900 border border-slate-200/80 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-200">
+              Hal <span className="text-indigo-600 dark:text-indigo-400 mx-1 font-black">{currentPage}</span> / {totalPages}
+            </div>
+
+            {/* Numbered Page Buttons (Desktop & Tablet) */}
+            <div className="hidden sm:flex items-center gap-1.5">
+              {Array.from({ length: totalPages }, (_, i) => i + 1)
+                .filter(page => {
+                  if (totalPages <= 7) return true;
+                  if (page === 1 || page === totalPages) return true;
+                  if (Math.abs(page - currentPage) <= 1) return true;
+                  return false;
+                })
+                .map((page, idx, array) => {
+                  const prevPage = array[idx - 1];
+                  const showEllipsis = prevPage && page - prevPage > 1;
+
+                  return (
+                    <React.Fragment key={page}>
+                      {showEllipsis && (
+                        <span className="px-1 text-xs text-slate-400 font-bold select-none">...</span>
+                      )}
+                      <button
+                        onClick={() => setCurrentPage(page)}
+                        className={`min-w-8 h-8 px-2.5 rounded-xl text-xs font-bold transition cursor-pointer ${
+                          currentPage === page
+                            ? 'bg-indigo-600 text-white shadow-xs'
+                            : 'border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700'
+                        }`}
+                      >
+                        {page}
+                      </button>
+                    </React.Fragment>
+                  );
+                })}
+            </div>
+
+            {/* Next Page */}
+            <button
+              id="btn-pagination-khusus-next"
+              onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+              disabled={currentPage === totalPages}
+              title="Halaman Berikutnya"
+              className="flex items-center justify-center w-8 h-8 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 disabled:opacity-30 disabled:cursor-not-allowed transition cursor-pointer"
+            >
+              <ChevronRight className="h-4 w-4" />
+            </button>
+
+            {/* Last Page (Desktop only) */}
+            <button
+              id="btn-pagination-khusus-last"
+              onClick={() => setCurrentPage(totalPages)}
+              disabled={currentPage === totalPages}
+              title="Halaman Terakhir"
+              className="hidden sm:inline-flex items-center justify-center w-8 h-8 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 disabled:opacity-30 disabled:cursor-not-allowed transition cursor-pointer"
+            >
+              <ChevronsRight className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
