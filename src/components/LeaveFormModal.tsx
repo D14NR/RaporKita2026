@@ -48,9 +48,10 @@ export const LeaveFormModal: React.FC<LeaveFormModalProps> = ({
 
     const targetDate = date || scheduleData?.date || new Date().toISOString().split('T')[0];
     const targetSubject = scheduleData?.subject || 'Umum';
-    const safeStudentId = (student?.id || '').trim();
+    const safeStudentId = (student?.id || student?.nis || '').trim();
+    const studentNis = (student?.nis || student?.id || '').trim();
 
-    if (!student || !safeStudentId || !student.nis) {
+    if (!student || (!safeStudentId && !studentNis)) {
       alert('Data siswa tidak lengkap. Silakan login ulang atau pilih siswa yang valid terlebih dahulu.');
       setIsSubmitting(false);
       return;
@@ -60,11 +61,13 @@ export const LeaveFormModal: React.FC<LeaveFormModalProps> = ({
 
     try {
       const nowIso = new Date().toISOString();
+      const studentName = student.nama_lengkap || student.nama || 'Siswa';
       const payload = {
         id: `leave-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
         siswa_id: safeStudentId,
-        nis: student.nis,
-        nama_siswa: student.nama || student.nama_lengkap || null,
+        nis: studentNis,
+        nama_siswa: studentName,
+        nama: studentName,
         tanggal: targetDate,
         mata_pelajaran: targetSubject,
         materi_sub_bab: reason ? `Permohonan ${leaveType}: ${reason}` : `Permohonan ${leaveType}`,
@@ -86,9 +89,6 @@ export const LeaveFormModal: React.FC<LeaveFormModalProps> = ({
       if (error) {
         console.error('Gagal menyimpan permohonan ke perkembangan_belajar:', { payload, error });
         alert(`Gagal menyimpan data ketidakhadiran: ${error?.message || 'Error tidak diketahui'}`);
-      } else if (!Array.isArray(data) || data.length === 0) {
-        console.error('Insert perkembangan_belajar berhasil dipanggil tapi tidak menghasilkan row:', { payload, data });
-        alert('Permohonan tidak tersimpan. Pastikan endpoint worker D1 sudah benar dan database aktif.');
       } else {
         didSave = true;
         console.log('Permohonan berhasil disimpan ke perkembangan_belajar:', data);

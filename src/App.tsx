@@ -2919,6 +2919,15 @@ export default function App() {
             message: `Permohonan ${sub.type} untuk ${sub.subject} (${sub.date}) berhasil dikirim.`,
             type: 'success'
           });
+          const newRecord: Attendance = {
+            id: Date.now(),
+            student_id: String(selectedStudentData?.nis || currentStudent?.nis || selectedStudentData?.id || currentStudent?.id || ''),
+            date: sub.date,
+            subject: sub.subject,
+            status: sub.type as 'Izin' | 'Sakit',
+            notes: sub.reason ? `Alasan ${sub.type}: ${sub.reason}` : `Permohonan ${sub.type}`
+          };
+          setAttendanceRecords(prev => [newRecord, ...prev]);
           setDataRefreshCounter(prev => prev + 1);
           setTimeout(() => setCustomToast(null), 4000);
         }}

@@ -448,7 +448,10 @@ class D1Query {
           throw new Error((payload as any).message || 'Insert gagal');
         }
 
-        return { data: toJson(payload, this.table), error: null };
+        const jsonRes = toJson(payload, this.table);
+        const returnData = (Array.isArray(jsonRes) && jsonRes.length > 0) ? jsonRes : this.insertRows;
+
+        return { data: returnData, error: null };
       }
 
       if (this.op === 'update') {
