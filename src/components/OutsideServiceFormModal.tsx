@@ -357,20 +357,54 @@ export const OutsideServiceFormModal: React.FC<OutsideServiceFormModalProps> = (
       console.log('Menyimpan presensi ke riwayat_pelayanan_siswa:', payload);
 
       const tryInsert = async (client: typeof d1, p: any) => {
-        const { data, error } = await client.from('riwayat_pelayanan_siswa').insert([p]).select();
-        if (!error && data && data.length > 0) return { data: data[0], error: null };
-        const { error: plainErr } = await client.from('riwayat_pelayanan_siswa').insert([p]);
-        if (!plainErr) return { data: p, error: null };
+        const executeInsertOnTable = async (tableName: string, payloadObj: any) => {
+          const { data, error } = await client.from(tableName).insert([payloadObj]).select();
+          if (!error && data && data.length > 0) return { data: data[0], error: null };
+          const { error: plainErr } = await client.from(tableName).insert([payloadObj]);
+          if (!plainErr) return { data: payloadObj, error: null };
+          return { data: null, error: error || plainErr };
+        };
 
-        // Fallback if FK constraint on kode_pengajar fails
+        // 1. Primary insert into riwayat_pelayanan_siswa
+        let res = await executeInsertOnTable('riwayat_pelayanan_siswa', p);
+        if (!res.error) return res;
+
+        // 2. Fallback if FK constraint on kode_pengajar fails
         if (p.kode_pengajar) {
-          const fallbackP = { ...p, kode_pengajar: null };
-          const { data: fkData, error: fkErr } = await client.from('riwayat_pelayanan_siswa').insert([fallbackP]).select();
-          if (!fkErr && fkData && fkData.length > 0) return { data: fkData[0], error: null };
-          const { error: fkPlainErr } = await client.from('riwayat_pelayanan_siswa').insert([fallbackP]);
-          if (!fkPlainErr) return { data: fallbackP, error: null };
+          res = await executeInsertOnTable('riwayat_pelayanan_siswa', { ...p, kode_pengajar: null });
+          if (!res.error) return res;
         }
-        return { data: null, error: error || plainErr };
+
+        // 3. Fallback if FK constraint on siswa_id fails
+        if (p.siswa_id) {
+          res = await executeInsertOnTable('riwayat_pelayanan_siswa', { ...p, siswa_id: null });
+          if (!res.error) return res;
+        }
+
+        // 4. Fallback if both FK constraints fail
+        if (p.kode_pengajar || p.siswa_id) {
+          res = await executeInsertOnTable('riwayat_pelayanan_siswa', { ...p, kode_pengajar: null, siswa_id: null });
+          if (!res.error) return res;
+        }
+
+        // 5. Fallback insert to tambahan_pelayanan
+        const tambahanPayload = {
+          id: p.id,
+          nis: p.nis,
+          nama: p.nama_siswa,
+          tanggal: p.tanggal,
+          mata_pelajaran: p.mata_pelajaran,
+          materi_sub_bab: p.materi_sub_bab,
+          durasi: p.durasi,
+          pengajar: p.nama_pengajar,
+          cabang: p.cabang,
+          created_at: p.created_at,
+          updated_at: p.updated_at
+        };
+        const tambRes = await executeInsertOnTable('tambahan_pelayanan', tambahanPayload);
+        if (!tambRes.error) return tambRes;
+
+        return { data: null, error: res.error || tambRes.error };
       };
 
       let res = await tryInsert(d1, payload);
