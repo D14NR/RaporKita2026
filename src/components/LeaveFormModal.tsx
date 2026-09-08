@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { X, Calendar, Clock, Send, CheckCircle, FileText } from 'lucide-react';
 import { DataSiswa } from '../types';
-import { d1 } from '../lib/d1';
+import { d1, d1Kbm } from '../lib/d1';
 import { formatTanggalIndo } from '../lib/dateUtils';
 
 interface LeaveFormModalProps {
@@ -67,7 +67,6 @@ export const LeaveFormModal: React.FC<LeaveFormModalProps> = ({
         siswa_id: safeStudentId,
         nis: studentNis,
         nama_siswa: studentName,
-        nama: studentName,
         tanggal: targetDate,
         mata_pelajaran: targetSubject,
         materi_sub_bab: reason ? `Permohonan ${leaveType}: ${reason}` : `Permohonan ${leaveType}`,
@@ -81,17 +80,34 @@ export const LeaveFormModal: React.FC<LeaveFormModalProps> = ({
         updated_at: nowIso,
       };
 
-      const { data, error } = await d1
-        .from('perkembangan_belajar')
-        .insert([payload])
-        .select();
+      const tryInsert = async (client: typeof d1, p: any) => {
+        const { data, error } = await client.from('perkembangan_belajar').insert([p]).select();
+        if (!error && data && data.length > 0) return { data: data[0], error: null };
+        const { error: plainErr } = await client.from('perkembangan_belajar').insert([p]);
+        if (!plainErr) return { data: p, error: null };
 
-      if (error) {
-        console.error('Gagal menyimpan permohonan ke perkembangan_belajar:', { payload, error });
-        alert(`Gagal menyimpan data ketidakhadiran: ${error?.message || 'Error tidak diketahui'}`);
+        // Fallback if FK constraint on siswa_id fails
+        if (p.siswa_id) {
+          const fallbackP = { ...p, siswa_id: null };
+          const { data: fkData, error: fkErr } = await client.from('perkembangan_belajar').insert([fallbackP]).select();
+          if (!fkErr && fkData && fkData.length > 0) return { data: fkData[0], error: null };
+          const { error: fkPlainErr } = await client.from('perkembangan_belajar').insert([fallbackP]);
+          if (!fkPlainErr) return { data: fallbackP, error: null };
+        }
+        return { data: null, error: error || plainErr };
+      };
+
+      let res = await tryInsert(d1, payload);
+      if (res.error) {
+        res = await tryInsert(d1Kbm, payload);
+      }
+
+      if (res.error) {
+        console.error('Gagal menyimpan permohonan ke perkembangan_belajar:', { payload, error: res.error });
+        alert(`Gagal menyimpan data ketidakhadiran: ${res.error?.message || 'Error tidak diketahui'}`);
       } else {
         didSave = true;
-        console.log('Permohonan berhasil disimpan ke perkembangan_belajar:', data);
+        console.log('Permohonan berhasil disimpan ke perkembangan_belajar:', res.data);
       }
     } catch (err: any) {
       console.error('Error saat menyimpan permohonan:', err);
@@ -110,15 +126,13 @@ export const LeaveFormModal: React.FC<LeaveFormModalProps> = ({
             reason
           });
         }
-      }
 
-      setTimeout(() => {
-        if (didSave) {
+        setTimeout(() => {
           setIsSuccess(false);
-        }
-        setReason('');
-        onClose();
-      }, 1800);
+          setReason('');
+          onClose();
+        }, 1800);
+      }
     }
   };
 

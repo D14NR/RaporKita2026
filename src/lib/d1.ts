@@ -35,6 +35,52 @@ function normalizeTableName(tableName: string): string {
   return TABLE_ALIASES[normalized] || normalized;
 }
 
+const TABLE_ALLOWED_COLUMNS: Record<string, string[]> = {
+  riwayat_pelayanan_siswa: [
+    'id', 'siswa_id', 'nis', 'nama_siswa', 'tanggal', 'kode_pengajar',
+    'nama_pengajar', 'mata_pelajaran', 'materi_sub_bab', 'durasi', 'cabang',
+    'created_at', 'updated_at'
+  ],
+  perkembangan_belajar: [
+    'id', 'siswa_id', 'nis', 'nama_siswa', 'tanggal', 'mata_pelajaran',
+    'materi_sub_bab', 'kehadiran', 'prosen_penguasaan', 'prosen_penjelasan',
+    'prosen_kondisi', 'catatan_pengajar', 'cabang', 'created_at', 'updated_at'
+  ],
+  permintaan_pelayanan: [
+    'id', 'nis', 'nama_siswa', 'cabang', 'tanggal_pengajuan', 'mata_pelajaran',
+    'kode_pengajar', 'nama_pengajar', 'keperluan', 'status', 'tanggal_disetujui',
+    'waktu_disetujui', 'created_at', 'updated_at'
+  ],
+  tambahan_pelayanan: [
+    'id', 'nis', 'nama', 'tanggal', 'mata_pelajaran', 'materi_sub_bab',
+    'durasi', 'pengajar', 'cabang', 'created_at', 'updated_at'
+  ],
+  data_siswa: [
+    'id', 'nis', 'nama_lengkap', 'tanggal_lahir', 'asal_sekolah', 'jenjang_studi',
+    'no_whatsapp_siswa', 'no_whatsapp_orang_tua', 'email', 'kelompok_kelas',
+    'mata_pelajaran', 'cabang', 'created_at', 'updated_at'
+  ],
+  nilai_evaluasi: [
+    'id', 'nis', 'nama_siswa', 'tanggal', 'mata_pelajaran', 'sub_bab_kode_soal',
+    'jumlah_soal', 'jawaban_benar', 'jawaban_salah', 'jawaban_kosong',
+    'nilai_prosentase', 'rekomendasi', 'cabang', 'created_at', 'updated_at'
+  ]
+};
+
+function filterRowColumns(tableName: string, row: any): any {
+  if (!row || typeof row !== 'object') return row;
+  const allowed = TABLE_ALLOWED_COLUMNS[normalizeTableName(tableName)];
+  if (!allowed) return row;
+
+  const clean: any = {};
+  for (const key of allowed) {
+    if (key in row) {
+      clean[key] = row[key];
+    }
+  }
+  return clean;
+}
+
 function normalizeRecordShape(tableName: string, record: any): any {
   if (!record || typeof record !== 'object') return record;
 
@@ -435,9 +481,10 @@ class D1Query {
 
     try {
       if (this.op === 'insert') {
-        const isBulk = this.insertRows.length > 1;
+        const cleanedRows = this.insertRows.map(r => filterRowColumns(tableName, r));
+        const isBulk = cleanedRows.length > 1;
         const endpoint = `${this.apiUrl}/db/${tableName}`;
-        const body = isBulk ? { rows: this.insertRows } : this.insertRows[0] ?? {};
+        const body = isBulk ? { rows: cleanedRows } : cleanedRows[0] ?? {};
         const payload = await readJson(endpoint, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
@@ -449,13 +496,14 @@ class D1Query {
         }
 
         const jsonRes = toJson(payload, this.table);
-        const returnData = (Array.isArray(jsonRes) && jsonRes.length > 0) ? jsonRes : this.insertRows;
+        const returnData = (Array.isArray(jsonRes) && jsonRes.length > 0) ? jsonRes : cleanedRows;
 
         return { data: returnData, error: null };
       }
 
       if (this.op === 'update') {
-        const updateRecord = this.updatePayload || {};
+        const cleanedUpdate = filterRowColumns(tableName, this.updatePayload || {});
+        const updateRecord = cleanedUpdate;
         const targetId = typeof updateRecord.id === 'string' ? updateRecord.id : null;
         const lookupParams = new URLSearchParams();
         if (targetId) {

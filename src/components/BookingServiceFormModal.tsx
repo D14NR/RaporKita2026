@@ -318,7 +318,7 @@ export const BookingServiceFormModal: React.FC<BookingServiceFormModalProps> = (
     e.preventDefault();
     setIsSubmitting(true);
 
-    const studentName = student?.nama || 'Siswa';
+    const studentName = student?.nama_lengkap || student?.nama || 'Siswa';
     const selectedTeacherRecord =
       pengajarList.find((p) => String(p.kode_pengajar || p.nama) === String(teacher)) ||
       filteredPengajarList.find((p) => String(p.kode_pengajar || p.nama) === String(teacher)) ||
@@ -336,7 +336,7 @@ export const BookingServiceFormModal: React.FC<BookingServiceFormModalProps> = (
     const nowIso = new Date().toISOString();
     const exactPayload = {
       id: `pp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      nis: student?.nis || 'S-DEFAULT',
+      nis: student?.nis || student?.id || 'S-DEFAULT',
       nama_siswa: studentName,
       cabang: student?.cabang || 'Pusat',
       tanggal_pengajuan: date,
@@ -359,6 +359,16 @@ export const BookingServiceFormModal: React.FC<BookingServiceFormModalProps> = (
         if (!error && data && data.length > 0) return { data: data[0], error: null };
         const { error: plainErr } = await client.from('permintaan_pelayanan').insert([p]);
         if (!plainErr) return { data: p, error: null };
+
+        // Fallback if FK constraint on kode_pengajar fails
+        if (p.kode_pengajar) {
+          const fallbackP = { ...p, kode_pengajar: null };
+          const { data: fkData, error: fkErr } = await client.from('permintaan_pelayanan').insert([fallbackP]).select();
+          if (!fkErr && fkData && fkData.length > 0) return { data: fkData[0], error: null };
+          const { error: fkPlainErr } = await client.from('permintaan_pelayanan').insert([fallbackP]);
+          if (!fkPlainErr) return { data: fallbackP, error: null };
+        }
+
         return { data: null, error: error || plainErr };
       };
 

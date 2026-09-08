@@ -321,22 +321,28 @@ export const OutsideServiceFormModal: React.FC<OutsideServiceFormModalProps> = (
 
     const targetDate = date || new Date().toISOString().split('T')[0];
 
-    try {
-      if (!student || !student.id || !student.nis) {
-        alert('Data siswa tidak lengkap. Silakan login ulang atau pilih siswa yang valid.');
-        setIsSubmitting(false);
-        return;
-      }
+    const safeStudentId = (student?.id || student?.nis || '').trim();
+    const studentNis = (student?.nis || student?.id || '').trim();
 
+    if (!student || (!safeStudentId && !studentNis)) {
+      alert('Data siswa tidak lengkap. Silakan login ulang atau pilih siswa yang valid.');
+      setIsSubmitting(false);
+      return;
+    }
+
+    let didSave = false;
+
+    try {
+      const studentName = student.nama_lengkap || student.nama || 'Siswa';
       const selectedTeacherRecord = pengajarList.find(
         (p) => p.nama === teacher || p.id === teacher || p.kode_pengajar === teacher
       );
 
       const payload = {
         id: `service-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-        siswa_id: student.id,
-        nis: student.nis,
-        nama_siswa: student.nama || student.nama_lengkap || 'Siswa',
+        siswa_id: safeStudentId,
+        nis: studentNis,
+        nama_siswa: studentName,
         tanggal: targetDate,
         kode_pengajar: selectedTeacherRecord?.kode_pengajar?.trim() || null,
         nama_pengajar: selectedTeacherRecord?.nama || teacher || 'Tentor Piket',
@@ -350,37 +356,59 @@ export const OutsideServiceFormModal: React.FC<OutsideServiceFormModalProps> = (
 
       console.log('Menyimpan presensi ke riwayat_pelayanan_siswa:', payload);
 
-      const { data, error } = await d1
-        .from('riwayat_pelayanan_siswa')
-        .insert([payload])
-        .select();
+      const tryInsert = async (client: typeof d1, p: any) => {
+        const { data, error } = await client.from('riwayat_pelayanan_siswa').insert([p]).select();
+        if (!error && data && data.length > 0) return { data: data[0], error: null };
+        const { error: plainErr } = await client.from('riwayat_pelayanan_siswa').insert([p]);
+        if (!plainErr) return { data: p, error: null };
 
-      if (error) {
-        console.error('Gagal menyimpan ke riwayat_pelayanan_siswa:', error);
-        alert(`Gagal menyimpan layanan luar KBM: ${error?.message || 'Error tidak diketahui'}`);
+        // Fallback if FK constraint on kode_pengajar fails
+        if (p.kode_pengajar) {
+          const fallbackP = { ...p, kode_pengajar: null };
+          const { data: fkData, error: fkErr } = await client.from('riwayat_pelayanan_siswa').insert([fallbackP]).select();
+          if (!fkErr && fkData && fkData.length > 0) return { data: fkData[0], error: null };
+          const { error: fkPlainErr } = await client.from('riwayat_pelayanan_siswa').insert([fallbackP]);
+          if (!fkPlainErr) return { data: fallbackP, error: null };
+        }
+        return { data: null, error: error || plainErr };
+      };
+
+      let res = await tryInsert(d1, payload);
+      if (res.error) {
+        res = await tryInsert(d1Kbm, payload);
+      }
+
+      if (res.error) {
+        console.error('Gagal menyimpan ke riwayat_pelayanan_siswa:', res.error);
+        alert(`Gagal menyimpan presensi pelayanan ke database: ${res.error?.message || 'Error tidak diketahui'}`);
       } else {
-        console.log('Presensi Layanan Luar KBM berhasil disimpan:', data);
+        didSave = true;
+        console.log('Presensi Layanan Luar KBM berhasil disimpan:', res.data);
       }
     } catch (err: any) {
       console.error('Error saat menyimpan presensi layanan luar KBM:', err);
+      alert(`Terjadi kesalahan sistem saat menyimpan presensi pelayanan: ${err?.message || err}`);
     } finally {
       setIsSubmitting(false);
-      setIsSuccess(true);
 
-      if (onSubmitSuccess) {
-        onSubmitSuccess({
-          subject,
-          date: targetDate,
-          teacher: teacher || 'Tentor Piket',
-        });
+      if (didSave) {
+        setIsSuccess(true);
+
+        if (onSubmitSuccess) {
+          onSubmitSuccess({
+            subject,
+            date: targetDate,
+            teacher: teacher || 'Tentor Piket',
+          });
+        }
+
+        setTimeout(() => {
+          setIsSuccess(false);
+          setTopic('');
+          setTeacher('');
+          onClose();
+        }, 1800);
       }
-
-      setTimeout(() => {
-        setIsSuccess(false);
-        setTopic('');
-        setTeacher('');
-        onClose();
-      }, 1800);
     }
   };
 
