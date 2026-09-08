@@ -1,6 +1,18 @@
 // Service Worker untuk Web Push Notifications
 
-const CACHE_NAME = 'raporkita-cache';
+const CACHE_NAME = 'raporkita-cache-v4';
+
+// Message listener untuk perintah dari client
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
+  if (event.data && event.data.type === 'CLEAR_CACHE') {
+    caches.keys().then((names) => {
+      names.forEach((name) => caches.delete(name));
+    });
+  }
+});
 
 // Install event - cache resources
 self.addEventListener('install', (event) => {

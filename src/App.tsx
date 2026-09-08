@@ -887,16 +887,15 @@ export default function App() {
       setDataRefreshCounter((prev) => prev + 1);
     }, FIFTEEN_MINUTES_MS);
 
-    // 2. Tab focus / visibility check (if > 15 mins passed since last sync)
+    // 2. Tab focus / visibility check (otomatis refresh data saat link/aplikasi dibuka)
     const handleSyncCheck = () => {
       if (document.visibilityState === 'visible') {
         const lastSyncStr = localStorage.getItem('last_rapor_sync_timestamp');
-        if (lastSyncStr) {
-          const lastSyncTime = parseInt(lastSyncStr, 10);
-          if (Date.now() - lastSyncTime >= FIFTEEN_MINUTES_MS) {
-            console.log('🔄 Tab visible & >15 minutes elapsed. Refreshing local cache...');
-            setDataRefreshCounter((prev) => prev + 1);
-          }
+        const now = Date.now();
+        // Jika belum ada sync atau sudah lebih dari 10 detik sejak sync terakhir
+        if (!lastSyncStr || (now - parseInt(lastSyncStr, 10) >= 10000)) {
+          console.log('🔄 Tab/Link dibuka & aktif: Memperbarui seluruh data terbaru...');
+          setDataRefreshCounter((prev) => prev + 1);
         }
       }
     };
