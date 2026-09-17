@@ -18,9 +18,10 @@ import {
   X,
   Trash2,
   Smartphone,
-  Download
+  Download,
+  ChevronDown
 } from 'lucide-react';
-import { d1 } from '../lib/d1';
+import { d1, d1Kbm } from '../lib/d1';
 import { DataSiswa } from '../types';
 import { PWAInstallModal } from './PWAInstallModal';
 
@@ -77,9 +78,47 @@ export default function Login({ onLoginSuccess, useD1, dbStatus, onToggleDemoMod
   const [showInstallModal, setShowInstallModal] = useState(false);
   const [searchName, setSearchName] = useState('');
   const [searchCabang, setSearchCabang] = useState('');
+  const [availableCabangList, setAvailableCabangList] = useState<string[]>(['Semarang 1', 'Semarang 2', 'Pusat']);
+  const [isLoadingCabang, setIsLoadingCabang] = useState(false);
   const [searchResult, setSearchResult] = useState<any[] | null>(null);
   const [isSearching, setIsSearching] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
+
+  // Fetch unique branches from data_siswa for the dropdown
+  useEffect(() => {
+    if (!showSearchModal) return;
+
+    let isMounted = true;
+    const fetchBranches = async () => {
+      setIsLoadingCabang(true);
+      try {
+        const { data, error: err } = await d1.from('data_siswa').select('cabang');
+        if (!err && Array.isArray(data) && isMounted) {
+          const uniqueCabang = Array.from(
+            new Set(
+              data
+                .map((d: any) => (d.cabang ? String(d.cabang).trim() : ''))
+                .filter((c: string) => c.length > 0)
+            )
+          ).sort((a, b) => a.localeCompare(b, 'id'));
+
+          if (uniqueCabang.length > 0) {
+            setAvailableCabangList(uniqueCabang);
+          }
+        }
+      } catch (e) {
+        console.warn('Gagal memuat daftar cabang dari data_siswa:', e);
+      } finally {
+        if (isMounted) setIsLoadingCabang(false);
+      }
+    };
+
+    fetchBranches();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [showSearchModal]);
 
   // Clear Cache & History States
   const [isClearingCache, setIsClearingCache] = useState(false);
@@ -653,16 +692,34 @@ export default function Login({ onLoginSuccess, useD1, dbStatus, onToggleDemoMod
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 tracking-wider uppercase mb-1.5">
-                    Cabang (Opsional)
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="Cth: Semarang 2"
-                    value={searchCabang}
-                    onChange={(e) => setSearchCabang(e.target.value)}
-                    className="block w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition-all text-sm font-medium"
-                  />
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label htmlFor="select-search-cabang" className="block text-xs font-bold text-slate-700 tracking-wider uppercase">
+                      Cabang (Opsional)
+                    </label>
+                    {isLoadingCabang && (
+                      <span className="text-[10px] font-semibold text-sky-600 flex items-center gap-1">
+                        <Loader2 className="h-3 w-3 animate-spin" /> Memuat cabang...
+                      </span>
+                    )}
+                  </div>
+                  <div className="relative">
+                    <select
+                      id="select-search-cabang"
+                      value={searchCabang}
+                      onChange={(e) => setSearchCabang(e.target.value)}
+                      className="block w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition-all text-sm font-medium appearance-none pr-10 cursor-pointer"
+                    >
+                      <option value="">Semua Cabang (Opsional)</option>
+                      {availableCabangList.map((cabangName) => (
+                        <option key={cabangName} value={cabangName}>
+                          {cabangName}
+                        </option>
+                      ))}
+                    </select>
+                    <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3.5 text-slate-400">
+                      <ChevronDown className="h-4 w-4" />
+                    </div>
+                  </div>
                 </div>
                 
                 <button
