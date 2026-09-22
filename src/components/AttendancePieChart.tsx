@@ -5,16 +5,15 @@ interface AttendancePieChartProps {
   stats: {
     hadir: number;
     izin: number;
-    alpa: number;
     sakit: number;
+    alpa?: number;
   };
 }
 
 const COLORS = {
   'Hadir': '#10b981',
   'Izin': '#f59e0b',
-  'Alpha': '#ef4444',
-  'Sakit': '#8b5cf6'
+  'Sakit': '#38bdf8'
 };
 
 export const AttendancePieChart: React.FC<AttendancePieChartProps> = ({ stats }) => {
@@ -22,7 +21,6 @@ export const AttendancePieChart: React.FC<AttendancePieChartProps> = ({ stats })
     return [
       { name: 'Hadir', value: stats.hadir },
       { name: 'Izin', value: stats.izin },
-      { name: 'Alpha', value: stats.alpa },
       { name: 'Sakit', value: stats.sakit }
     ].filter(item => item.value > 0);
   }, [stats]);
