@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { X, Calendar, Clock, BookOpen, UserCheck, Send, CheckCircle, HeartHandshake, ChevronDown, Search } from 'lucide-react';
 import { DataSiswa, Pengajar } from '../types';
-import { d1, d1Kbm } from '../lib/d1';
+import { d1, invalidateClientD1Cache } from '../lib/d1';
 
 interface SearchableSelectOption {
   value: string;
@@ -143,7 +143,7 @@ interface OutsideServiceFormModalProps {
   isOpen: boolean;
   onClose: () => void;
   student: DataSiswa | null;
-  onSubmitSuccess?: (submission: { subject: string; date: string; teacher: string }) => void;
+  onSubmitSuccess?: (submission: { subject: string; date: string; teacher: string; record?: any }) => void;
 }
 
 const DEFAULT_PENGAJAR_FALLBACK: Pengajar[] = [
@@ -321,10 +321,9 @@ export const OutsideServiceFormModal: React.FC<OutsideServiceFormModalProps> = (
 
     const targetDate = date || new Date().toISOString().split('T')[0];
 
-    const safeStudentId = (student?.id || student?.nis || '').trim();
-    const studentNis = (student?.nis || student?.id || '').trim();
+    const studentNis = (student?.nis || (student as any)?.id || '').trim();
 
-    if (!student || (!safeStudentId && !studentNis)) {
+    if (!student || !studentNis) {
       alert('Data siswa tidak lengkap. Silakan login ulang atau pilih siswa yang valid.');
       setIsSubmitting(false);
       return;
@@ -338,101 +337,89 @@ export const OutsideServiceFormModal: React.FC<OutsideServiceFormModalProps> = (
         (p) => p.nama === teacher || p.id === teacher || p.kode_pengajar === teacher
       );
 
+      // Verify and resolve the valid siswa_id that satisfies FOREIGN KEY (siswa_id) REFERENCES data_siswa (id)
+      let resolvedSiswaId: string | null = null;
+      let resolvedCabang = student.cabang || null;
+
+      if (student.id && String(student.id).startsWith('id_')) {
+        resolvedSiswaId = String(student.id);
+      } else {
+        try {
+          const { data: dbStudent } = await d1
+            .from('data_siswa')
+            .select('id, nis, cabang')
+            .eq('nis', studentNis)
+            .maybeSingle();
+
+          if (dbStudent?.id) {
+            resolvedSiswaId = String(dbStudent.id);
+            if (!resolvedCabang && dbStudent.cabang) {
+              resolvedCabang = dbStudent.cabang;
+            }
+          }
+        } catch (lookupErr) {
+          console.warn('Gagal verifikasi id siswa dari tabel data_siswa:', lookupErr);
+        }
+      }
+
+      const teacherCode = selectedTeacherRecord?.kode_pengajar?.trim() || null;
+      const teacherName = selectedTeacherRecord?.nama || teacher || 'Tentor Piket';
+      const mapel = (subject || 'Klinik Belajar Umum').trim();
+      const materi = (topic || 'Layanan Konsultasi Belajar').trim();
+      const durationVal = (duration || '60 Menit').trim();
+      const nowIso = new Date().toISOString();
+
       const payload = {
         id: `service-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-        siswa_id: safeStudentId,
+        siswa_id: resolvedSiswaId,
         nis: studentNis,
         nama_siswa: studentName,
         tanggal: targetDate,
-        kode_pengajar: selectedTeacherRecord?.kode_pengajar?.trim() || null,
-        nama_pengajar: selectedTeacherRecord?.nama || teacher || 'Tentor Piket',
-        mata_pelajaran: (subject || 'Klinik Belajar Umum').trim() || 'Klinik Belajar Umum',
-        materi_sub_bab: (topic || 'Layanan Konsultasi Belajar').trim() || 'Layanan Konsultasi Belajar',
-        durasi: (duration || '60 menit').trim() || '60 menit',
-        cabang: student.cabang || null,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
+        kode_pengajar: teacherCode,
+        nama_pengajar: teacherName,
+        mata_pelajaran: mapel,
+        materi_sub_bab: materi,
+        durasi: durationVal,
+        cabang: resolvedCabang,
+        created_at: nowIso,
+        updated_at: nowIso,
       };
 
-      console.log('Menyimpan presensi ke riwayat_pelayanan_siswa:', payload);
+      console.log('Menyimpan presensi layanan ke D1 tabel riwayat_pelayanan_siswa:', payload);
 
-      const tryInsert = async (client: typeof d1, p: any) => {
-        const executeInsertOnTable = async (tableName: string, payloadObj: any) => {
-          const { data, error } = await client.from(tableName).insert([payloadObj]).select();
-          if (!error && data && data.length > 0) return { data: data[0], error: null };
-          const { error: plainErr } = await client.from(tableName).insert([payloadObj]);
-          if (!plainErr) return { data: payloadObj, error: null };
-          return { data: null, error: error || plainErr };
-        };
+      // Primary insertion directly to riwayat_pelayanan_siswa
+      let res = await d1.from('riwayat_pelayanan_siswa').insert([payload]);
 
-        // 1. Primary insert into riwayat_pelayanan_siswa
-        let res = await executeInsertOnTable('riwayat_pelayanan_siswa', p);
-        if (!res.error) return res;
+      // If foreign key constraint failed on siswa_id (e.g. ID not found in data_siswa)
+      if (res.error && payload.siswa_id) {
+        console.warn('Retrying insert into riwayat_pelayanan_siswa with siswa_id: null:', res.error);
+        payload.siswa_id = null;
+        res = await d1.from('riwayat_pelayanan_siswa').insert([payload]);
+      }
 
-        // 2. Fallback if FK constraint on kode_pengajar fails
-        if (p.kode_pengajar) {
-          res = await executeInsertOnTable('riwayat_pelayanan_siswa', { ...p, kode_pengajar: null });
-          if (!res.error) return res;
-        }
-
-        // 3. Fallback if FK constraint on siswa_id fails
-        if (p.siswa_id) {
-          res = await executeInsertOnTable('riwayat_pelayanan_siswa', { ...p, siswa_id: null });
-          if (!res.error) return res;
-        }
-
-        // 4. Fallback if both FK constraints fail
-        if (p.kode_pengajar || p.siswa_id) {
-          res = await executeInsertOnTable('riwayat_pelayanan_siswa', { ...p, kode_pengajar: null, siswa_id: null });
-          if (!res.error) return res;
-        }
-
-        // 5. Fallback insert to tambahan_pelayanan
-        const tambahanPayload = {
-          id: p.id,
-          nis: p.nis,
-          nama: p.nama_siswa,
-          tanggal: p.tanggal,
-          mata_pelajaran: p.mata_pelajaran,
-          materi_sub_bab: p.materi_sub_bab,
-          durasi: p.durasi,
-          pengajar: p.nama_pengajar,
-          cabang: p.cabang,
-          created_at: p.created_at,
-          updated_at: p.updated_at
-        };
-        const tambRes = await executeInsertOnTable('tambahan_pelayanan', tambahanPayload);
-        if (!tambRes.error) return tambRes;
-
-        return { data: null, error: res.error || tambRes.error };
-      };
-
-      let res = await tryInsert(d1, payload);
-      if (res.error) {
-        res = await tryInsert(d1Kbm, payload);
+      // If foreign key constraint failed on kode_pengajar
+      if (res.error && payload.kode_pengajar) {
+        console.warn('Retrying insert into riwayat_pelayanan_siswa with kode_pengajar: null:', res.error);
+        payload.kode_pengajar = null;
+        res = await d1.from('riwayat_pelayanan_siswa').insert([payload]);
       }
 
       if (res.error) {
         console.error('Gagal menyimpan ke riwayat_pelayanan_siswa:', res.error);
-        alert(`Gagal menyimpan presensi pelayanan ke database: ${res.error?.message || 'Error tidak diketahui'}`);
+        alert(`Gagal menyimpan presensi pelayanan ke database D1: ${res.error?.message || 'Error tidak diketahui'}`);
       } else {
         didSave = true;
-        console.log('Presensi Layanan Luar KBM berhasil disimpan:', res.data);
-      }
-    } catch (err: any) {
-      console.error('Error saat menyimpan presensi layanan luar KBM:', err);
-      alert(`Terjadi kesalahan sistem saat menyimpan presensi pelayanan: ${err?.message || err}`);
-    } finally {
-      setIsSubmitting(false);
+        invalidateClientD1Cache('riwayat_pelayanan_siswa');
+        console.log('Presensi Layanan berhasil disimpan di tabel riwayat_pelayanan_siswa D1:', payload);
 
-      if (didSave) {
         setIsSuccess(true);
 
         if (onSubmitSuccess) {
           onSubmitSuccess({
-            subject,
+            subject: mapel,
             date: targetDate,
-            teacher: teacher || 'Tentor Piket',
+            teacher: teacherName,
+            record: payload,
           });
         }
 
@@ -443,6 +430,11 @@ export const OutsideServiceFormModal: React.FC<OutsideServiceFormModalProps> = (
           onClose();
         }, 1800);
       }
+    } catch (err: any) {
+      console.error('Error saat menyimpan presensi layanan luar KBM:', err);
+      alert(`Terjadi kesalahan sistem saat menyimpan presensi pelayanan: ${err?.message || err}`);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 

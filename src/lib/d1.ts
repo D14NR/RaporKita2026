@@ -838,10 +838,16 @@ CREATE TABLE IF NOT EXISTS riwayat_pelayanan_siswa (
     materi_sub_bab TEXT,
     durasi TEXT,
     cabang TEXT,
-    created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-    updated_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-    FOREIGN KEY (siswa_id) REFERENCES data_siswa (id) ON UPDATE CASCADE ON DELETE CASCADE,
-    FOREIGN KEY (kode_pengajar) REFERENCES pengajar (kode_pengajar)
+    created_at TEXT DEFAULT (
+        strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+    ),
+    updated_at TEXT DEFAULT (
+        strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+    ),
+    FOREIGN KEY (siswa_id)
+        REFERENCES data_siswa (id)
+        ON UPDATE CASCADE
+        ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS nilai_evaluasi (

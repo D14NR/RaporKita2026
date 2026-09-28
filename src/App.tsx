@@ -38,7 +38,7 @@ import {
   Wifi,
   WifiOff
 } from 'lucide-react';
-import { d1, d1Kbm, DB_SETUP_SQL } from './lib/d1';
+import { d1, d1Kbm, DB_SETUP_SQL, invalidateClientD1Cache } from './lib/d1';
 import { 
   Student, 
   DataSiswa,
@@ -724,13 +724,15 @@ export default function App() {
         const [
           pbRes, // perkembangan_belajar response
           srvRes,
+          legacySrvRes,
           evalRes,
           stdRes,
           snbtRes,
           bookingRes
         ] = await Promise.all([
           loadByStudentIdentity('perkembangan_belajar'),
-          d1.from('riwayat_pelayanan_siswa').select('*').in('nis', nisCandidates).order('tanggal', { ascending: false }),
+          loadByStudentIdentity('riwayat_pelayanan_siswa'),
+          d1.from('tambahan_pelayanan').select('*').in('nis', nisCandidates).order('tanggal', { ascending: false }).catch(() => ({ data: [], error: null })),
           loadByStudentIdentity('nilai_evaluasi'),
           d1.from('nilai_standar').select('*').in('nis', nisCandidates).order('tanggal', { ascending: false }),
           d1.from('nilai_snbt').select('*').in('nis', nisCandidates).order('tanggal', { ascending: false }),
@@ -766,9 +768,30 @@ export default function App() {
           })()
         ]);
 
-        if (srvRes.data) {
-          setOutsideServices(srvRes.data);
-          localStorage.setItem(`rapor_srv_${selectedStudentId}`, JSON.stringify(srvRes.data));
+        // Process completed outside services: riwayat_pelayanan_siswa is primary
+        const srvMap = new Map<string, any>();
+        if (legacySrvRes?.data && Array.isArray(legacySrvRes.data)) {
+          legacySrvRes.data.forEach((r: any) => {
+            const key = String(r.id || `${r.tanggal}-${r.mata_pelajaran}-${r.nis}`);
+            srvMap.set(key, r);
+          });
+        }
+        if (srvRes?.data && Array.isArray(srvRes.data)) {
+          srvRes.data.forEach((r: any) => {
+            const key = String(r.id || `${r.tanggal}-${r.mata_pelajaran}-${r.nis}`);
+            srvMap.set(key, r);
+          });
+        }
+        const combinedServices = Array.from(srvMap.values());
+        combinedServices.sort((a, b) => {
+          const dateA = parseDateSafe(a.tanggal || a.created_at)?.getTime() || 0;
+          const dateB = parseDateSafe(b.tanggal || b.created_at)?.getTime() || 0;
+          return dateB - dateA;
+        });
+
+        if (combinedServices.length > 0 || srvRes.data) {
+          setOutsideServices(combinedServices);
+          localStorage.setItem(`rapor_srv_${selectedStudentId}`, JSON.stringify(combinedServices));
         }
         if (evalRes.data) {
           const evaluationRows = evalRes.data.filter((row: any) => {
@@ -2885,9 +2908,13 @@ export default function App() {
         student={selectedStudentData || currentStudent}
         onSubmitSuccess={(sub) => {
           setCustomToast({
-            message: `Presensi Layanan ${sub.subject} (${sub.date}) berhasil dicatat.`,
+            message: `Presensi Layanan ${sub.subject} (${sub.date}) berhasil dicatat & tersimpan di database D1 riwayat_pelayanan_siswa.`,
             type: 'success'
           });
+          if (sub.record) {
+            setOutsideServices(prev => [sub.record, ...prev.filter(r => r.id !== sub.record.id)]);
+          }
+          invalidateClientD1Cache('riwayat_pelayanan_siswa');
           setDataRefreshCounter(prev => prev + 1);
           setTimeout(() => setCustomToast(null), 4000);
         }}
