@@ -1031,36 +1031,17 @@ export default function App() {
 
           if (targetJenis === 'Reguler') {
             // KHUSUS MENU JADWAL KBM REGULER:
-            // Data diambil murni berdasarkan Cabang dan Kelompok Kelas saja (semua mapel kelas reguler ditampilkan)
-            const normActiveKelas = normalize(activeKelas);
-            const rowKelasRaw = normalize(row.kelompok_kelas || row.kelas || row.sekolah);
+            // Data diambil murni berdasarkan Cabang dan Jenjang Studi saja
+            const normActiveJenjang = normalize(activeJenjang);
+            const rowJenjangRaw = normalize(row.jenjang_studi || row.jenjang);
 
-            if (normActiveKelas) {
-              if (!rowKelasRaw) {
+            if (normActiveJenjang) {
+              if (!rowJenjangRaw) {
                 return false;
               }
-              const rowItems = rowKelasRaw.split(/[,;\/]+/).map(s => s.trim()).filter(Boolean);
-              const matchesClass = rowItems.some(item => {
-                if (item === normActiveKelas) return true;
-                
-                const cleanActive = normActiveKelas.replace(/[^a-z0-9]/g, '');
-                const cleanItem = item.replace(/[^a-z0-9]/g, '');
-                
-                if (cleanItem === cleanActive) return true;
-
-                // Ensure grade number matches if present
-                const activeNums = normActiveKelas.match(/\d+/g) || [];
-                const itemNums = item.match(/\d+/g) || [];
-                if (activeNums.length > 0 && itemNums.length > 0) {
-                  if (activeNums[0] !== itemNums[0]) {
-                    return false;
-                  }
-                }
-
-                return cleanItem.includes(cleanActive) || cleanActive.includes(cleanItem);
-              });
-
-              if (!matchesClass) {
+              const cleanActiveJenjang = normActiveJenjang.replace(/[^a-z0-9]/g, '');
+              const cleanRowJenjang = rowJenjangRaw.replace(/[^a-z0-9]/g, '');
+              if (!cleanRowJenjang.includes(cleanActiveJenjang) && !cleanActiveJenjang.includes(cleanRowJenjang)) {
                 return false;
               }
             }
