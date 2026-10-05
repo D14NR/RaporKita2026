@@ -1,6 +1,6 @@
 // Service Worker untuk Web Push Notifications
 
-const CACHE_NAME = 'raporkita-cache-v5';
+const CACHE_NAME = 'raporkita-cache-v1.2.4';
 
 // Message listener untuk perintah dari client
 self.addEventListener('message', (event) => {
@@ -11,6 +11,7 @@ self.addEventListener('message', (event) => {
     caches.keys().then((names) => {
       names.forEach((name) => caches.delete(name));
     });
+    // Jika ingin benar-benar bersih, bisa unregister tapi itu biasanya dilakukan client
   }
 });
 
@@ -114,8 +115,14 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Skip API calls & config checks
-  if (event.request.url.includes('/api/') || event.request.url.includes('/db/') || event.request.url.includes('app_config.json')) {
+  // Skip API calls, config checks, and version manifest
+  if (
+    event.request.url.includes('/api/') || 
+    event.request.url.includes('/db/') || 
+    event.request.url.includes('app_config.json') ||
+    event.request.url.includes('version.json') ||
+    event.request.url.includes('sw.js')
+  ) {
     return;
   }
 

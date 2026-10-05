@@ -38,7 +38,7 @@ import {
   Wifi,
   WifiOff
 } from 'lucide-react';
-import { d1, d1Kbm, DB_SETUP_SQL, invalidateClientD1Cache } from './lib/d1';
+import { d1, d1Kbm, DB_SETUP_SQL, invalidateClientD1Cache, baseApiUrl } from './lib/d1';
 import { 
   Student, 
   DataSiswa,
@@ -80,7 +80,7 @@ import { PWAInstallModal } from './components/PWAInstallModal';
 import { requestNotificationPermission } from './lib/pushNotifications';
 import { formatScore, roundScore } from './lib/formatUtils';
 
-const APP_VERSION = '1.0.0';
+const APP_VERSION = '1.2.4';
 
 export default function App() {
   // Manual Version Check Trigger
@@ -108,6 +108,55 @@ export default function App() {
       return () => clearTimeout(timer);
     }
   }, [currentStudent]);
+
+  // Polling for New Data (Notifications & Updates)
+  useEffect(() => {
+    if (!currentStudent?.nis) return;
+
+    const pollForNewData = async () => {
+      try {
+        // 1. Check for New Unread Notifications in D1
+        const response = await fetch(`${baseApiUrl}/db/riwayat_notifikasi_siswa?eq_nis=${currentStudent.nis}&eq_status_baca=0&limit=1&order=created_at&ascending=false`, {
+          method: 'GET',
+          headers: { Accept: 'application/json' }
+        });
+        const data = await response.json().catch(() => []);
+        const unreadRows = Array.isArray(data) ? data : (data?.data || []);
+        
+        if (unreadRows.length > 0) {
+          const latestId = String(unreadRows[0].id);
+          const lastPollId = localStorage.getItem(`last_notif_poll_${currentStudent.nis}`);
+          
+          if (lastPollId && latestId !== lastPollId) {
+            console.log('🔔 New notification detected via polling!');
+            // Trigger refresh
+            setDataRefreshCounter(prev => prev + 1);
+            
+            // Show browser notification if possible
+            if (Notification.permission === 'granted') {
+              new Notification('🔔 Notifikasi Baru', {
+                body: unreadRows[0].pesan || 'Ada informasi terbaru untuk Anda.',
+                icon: '/pwa-192x192.png'
+              });
+            }
+          }
+          localStorage.setItem(`last_notif_poll_${currentStudent.nis}`, latestId);
+        }
+
+        // 2. Refresh Cache Data periodically (sudah ditangani oleh interval 5 menit di main sync effect)
+      } catch (err) {
+        // Silent fail for polling
+      }
+    };
+
+    // Initial delay then poll every 1 minute
+    const pollInterval = setInterval(pollForNewData, 60000);
+    
+    // Also poll once after login
+    pollForNewData();
+
+    return () => clearInterval(pollInterval);
+  }, [currentStudent?.nis]);
 
   // Navigation & UI State
   const [activeTab, setActiveTab] = useState<'overview' | 'kbm-reguler' | 'kbm-tambahan' | 'presensi' | 'perkembangan' | 'uji-materi' | 'nilai' | 'luar-kbm' | 'analisa' | 'd1-config'>('overview');
@@ -185,6 +234,27 @@ export default function App() {
   }) => {
     setSelectedScheduleForLeave(sched || null);
     setIsLeaveModalOpen(true);
+  };
+
+  const handleForceUpdate = () => {
+    if (confirm('Bersihkan cache dan muat ulang aplikasi untuk mendapatkan pembaruan terbaru?')) {
+      if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+        navigator.serviceWorker.controller.postMessage({ type: 'CLEAR_CACHE' });
+      }
+      localStorage.removeItem('app_version_cache');
+      
+      // Hapus seluruh cache storage browser jika didukung
+      if ('caches' in window) {
+        caches.keys().then(names => {
+          for (let name of names) caches.delete(name);
+        });
+      }
+
+      setTimeout(() => {
+        // Force reload from server bypassing browser cache
+        window.location.href = window.location.origin + window.location.pathname + '?v=' + Date.now();
+      }, 1000);
+    }
   };
 
   const parseSubjectList = (value?: string) => {
@@ -900,15 +970,15 @@ export default function App() {
     loadStudentData();
   }, [selectedStudentId, useD1, currentStudent, dataRefreshCounter]);
 
-  // Periodic Cache Update every 15 minutes (900,000ms) automatically
+  // Periodic Cache Update every 5 minutes (300,000ms) automatically
   useEffect(() => {
-    const FIFTEEN_MINUTES_MS = 15 * 60 * 1000;
+    const FIVE_MINUTES_MS = 5 * 60 * 1000;
 
-    // 1. Auto timer every 15 minutes
+    // 1. Auto timer every 5 minutes
     const intervalId = setInterval(() => {
-      console.log('🔄 Periodic 15-minute cache update triggered automatically.');
+      console.log('🔄 Periodic 5-minute cache update triggered automatically.');
       setDataRefreshCounter((prev) => prev + 1);
-    }, FIFTEEN_MINUTES_MS);
+    }, FIVE_MINUTES_MS);
 
     // 2. Tab focus / visibility check (otomatis refresh data saat link/aplikasi dibuka)
     const handleSyncCheck = () => {
@@ -923,13 +993,27 @@ export default function App() {
       }
     };
 
+    // 3. Listen for Service Worker messages (e.g. Periodic Sync)
+    const handleSWMessage = (event: MessageEvent) => {
+      if (event.data && event.data.type === 'PERIODIC_SYNC') {
+        console.log('🔄 Periodic Sync dari Service Worker diterima.');
+        setDataRefreshCounter((prev) => prev + 1);
+      }
+    };
+
     document.addEventListener('visibilitychange', handleSyncCheck);
     window.addEventListener('focus', handleSyncCheck);
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.addEventListener('message', handleSWMessage);
+    }
 
     return () => {
       clearInterval(intervalId);
       document.removeEventListener('visibilitychange', handleSyncCheck);
       window.removeEventListener('focus', handleSyncCheck);
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.removeEventListener('message', handleSWMessage);
+      }
     };
   }, []);
 
@@ -965,6 +1049,11 @@ export default function App() {
         if (activeCabang) {
           queryReg = queryReg.ilike('cabang', `%${activeCabang}%`);
           queryKhusus = queryKhusus.ilike('cabang', `%${activeCabang}%`);
+        }
+        
+        if (activeJenjang) {
+          queryReg = queryReg.ilike('jenjang_studi', `%${activeJenjang}%`);
+          queryKhusus = queryKhusus.ilike('jenjang_studi', `%${activeJenjang}%`);
         }
 
         // Fetch all rows matching the branch to perform robust case-insensitive filtering in memory
@@ -1781,6 +1870,31 @@ export default function App() {
                 {!isSidebarCollapsed && <span className="truncate">Sembunyikan Menu</span>}
               </button>
             </div>
+
+            {/* System Info & Version */}
+            <div className={`mt-auto border-t border-slate-100 pt-3 flex flex-col gap-2 ${isSidebarCollapsed ? 'items-center' : 'px-3'}`}>
+              {!isSidebarCollapsed && (
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-bold text-slate-400">Versi {APP_VERSION}</span>
+                  <button 
+                    onClick={handleForceUpdate}
+                    className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-sky-600 transition cursor-pointer"
+                    title="Segarkan Aplikasi"
+                  >
+                    <RefreshCw className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              )}
+              {isSidebarCollapsed && (
+                <button 
+                  onClick={handleForceUpdate}
+                  className="p-2 hover:bg-slate-100 rounded-xl text-slate-400 hover:text-sky-600 transition cursor-pointer"
+                  title={`Segarkan Aplikasi (v${APP_VERSION})`}
+                >
+                  <RefreshCw className="h-4 w-4" />
+                </button>
+              )}
+            </div>
           </div>
         </aside>
 
@@ -2506,6 +2620,22 @@ export default function App() {
                   </button>
                 );
               })}
+
+              {/* Version & Force Update Button for Mobile */}
+              <button
+                onClick={handleForceUpdate}
+                className="flex flex-col items-center justify-between p-3 rounded-2xl border bg-slate-50 dark:bg-slate-800/60 border-slate-200/70 dark:border-slate-700/70 cursor-pointer active:scale-95"
+              >
+                <div className="p-3 rounded-xl bg-orange-50 dark:bg-orange-950/50 text-orange-600 dark:text-orange-400 border border-orange-100 dark:border-orange-900/50 mb-2">
+                  <RefreshCw className="h-5 w-5" />
+                </div>
+                <span className="text-xs font-bold leading-tight text-slate-800 dark:text-slate-100">
+                  Update App
+                </span>
+                <span className="text-[9px] font-medium mt-0.5 text-slate-400">
+                  v{APP_VERSION}
+                </span>
+              </button>
             </div>
           </div>
         </div>

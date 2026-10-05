@@ -264,7 +264,7 @@ export const KbmRegulerView: React.FC<KbmRegulerViewProps> = ({
               Jadwal KBM Reguler
             </h2>
             <p className="text-sm text-slate-300 max-w-xl font-normal leading-relaxed">
-              Jadwal tatap muka, mata pelajaran, dan pengampu kelas reguler siswa berdasarkan cabang dan kelompok kelas.
+              Jadwal tatap muka, mata pelajaran, dan pengampu kelas reguler siswa berdasarkan cabang dan jenjang studi.
             </p>
           </div>
 
@@ -552,7 +552,7 @@ export const KbmRegulerView: React.FC<KbmRegulerViewProps> = ({
               ? 'Tidak ada jadwal yang cocok dengan kata kunci pencarian Anda.'
               : periodFilter === 'HISTORY'
               ? 'Belum ada catatan jadwal masa lampau untuk cabang dan kelas ini.'
-              : `Jadwal tidak ditemukan untuk Cabang ${studentCabang} dan Kelompok Kelas ${studentKelas}.`}
+              : `Jadwal tidak ditemukan untuk Cabang ${studentCabang} dan Jenjang Studi ${(studentData as any)?.jenjang_studi || '-'}.`}
           </p>
           {periodFilter === 'HISTORY' && (
             <button

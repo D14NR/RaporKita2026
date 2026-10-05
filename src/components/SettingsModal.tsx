@@ -18,6 +18,7 @@ import {
 import { DataSiswa } from '../types';
 import { PWAInstallModal } from './PWAInstallModal';
 import { usePWAInstall } from '../hooks/usePWAInstall';
+import { usePushNotifications } from '../hooks/usePushNotifications';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -42,26 +43,15 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [showInstallGuideModal, setShowInstallGuideModal] = useState<boolean>(false);
   const [activeSubView, setActiveSubView] = useState<'main' | 'info'>('main');
   const { isInstallable, isInstalled, install } = usePWAInstall();
-
-  useEffect(() => {
-    // Check notification permission status
-    if (typeof window !== 'undefined' && 'Notification' in window) {
-      setNotificationPermission(Notification.permission);
-    } else {
-      setNotificationPermission('unsupported');
-    }
-  }, []);
+  const { permission: pushPermission, isSubscribed, subscribe, unsubscribe, loading: pushLoading } = usePushNotifications(student);
 
   if (!isOpen) return null;
 
-  const handleRequestNotification = async () => {
-    if (typeof window !== 'undefined' && 'Notification' in window) {
-      try {
-        const permission = await Notification.requestPermission();
-        setNotificationPermission(permission);
-      } catch (err) {
-        console.warn('Error requesting notification permission:', err);
-      }
+  const handleTogglePush = async () => {
+    if (isSubscribed) {
+      await unsubscribe();
+    } else {
+      await subscribe();
     }
   };
 
@@ -112,41 +102,47 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         {/* Modal Body - Scrollable */}
         <div className="p-4 sm:p-5 space-y-3.5 overflow-y-auto flex-1 text-slate-800 dark:text-slate-100">
 
-          {/* 1. PERIZINAN NOTIFIKASI */}
-          <div className="bg-slate-50/80 dark:bg-slate-800/40 border border-slate-200/80 dark:border-slate-700/60 rounded-2xl p-4 space-y-2 transition hover:border-slate-300 dark:hover:border-slate-600">
+          {/* 1. NOTIFIKASI PUSH (REAL-TIME) */}
+          <div className="bg-slate-50/80 dark:bg-slate-800/40 border border-slate-200/80 dark:border-slate-700/60 rounded-2xl p-4 space-y-3 transition hover:border-slate-300 dark:hover:border-slate-600">
             <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-3">
                 <div className="p-2.5 bg-sky-100 dark:bg-sky-950/80 text-sky-600 dark:text-sky-400 rounded-xl shrink-0">
-                  <Bell className="h-4 w-4" />
+                  <Bell className={`h-4 w-4 ${isSubscribed ? 'animate-bell-wiggle' : ''}`} />
                 </div>
                 <div>
-                  <h4 className="text-xs font-bold text-slate-900 dark:text-slate-100">Perizinan Notifikasi</h4>
-                  <p className="text-[11px] text-slate-500 dark:text-slate-400">Pengingat presensi & jadwal KBM</p>
+                  <h4 className="text-xs font-bold text-slate-900 dark:text-slate-100">Notifikasi Real-Time</h4>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400">Info nilai baru & jadwal otomatis</p>
                 </div>
               </div>
 
-              {notificationPermission === 'granted' ? (
-                <span className="inline-flex items-center gap-1 text-[11px] font-bold bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 px-3 py-1 rounded-xl border border-emerald-200 dark:border-emerald-800 shrink-0">
-                  <CheckCircle className="h-3.5 w-3.5 text-emerald-500" />
-                  Aktif
-                </span>
-              ) : notificationPermission === 'denied' ? (
-                <span className="inline-flex items-center gap-1 text-[11px] font-bold bg-rose-50 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300 px-3 py-1 rounded-xl border border-rose-200 dark:border-rose-800 shrink-0">
-                  <AlertCircle className="h-3.5 w-3.5 text-rose-500" />
-                  Ditolak
-                </span>
-              ) : (
-                <button
-                  onClick={handleRequestNotification}
-                  className="text-xs font-bold bg-sky-600 hover:bg-sky-500 text-white px-3.5 py-1.5 rounded-xl shadow-xs transition cursor-pointer shrink-0"
-                >
-                  Izinkan
-                </button>
-              )}
+              <button
+                onClick={handleTogglePush}
+                disabled={pushLoading || pushPermission === 'denied'}
+                className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                  isSubscribed ? 'bg-emerald-500' : 'bg-slate-200 dark:bg-slate-700'
+                } ${pushLoading ? 'opacity-50 cursor-wait' : ''}`}
+              >
+                <span
+                  className={`inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                    isSubscribed ? 'translate-x-5' : 'translate-x-0'
+                  }`}
+                />
+              </button>
             </div>
-            {notificationPermission === 'denied' && (
-              <p className="text-[10px] text-rose-600 dark:text-rose-400 font-medium italic pt-1 border-t border-rose-100 dark:border-rose-900/40">
-                Izin notifikasi diblokir di browser. Harap izinkan melalui pengaturan browser Anda.
+            
+            {pushPermission === 'denied' ? (
+              <div className="flex items-center gap-1.5 text-[10px] text-rose-600 dark:text-rose-400 font-medium italic pt-2 border-t border-rose-100 dark:border-rose-900/40">
+                <AlertCircle className="h-3 w-3" />
+                Izin diblokir browser. Harap aktifkan di pengaturan situs.
+              </div>
+            ) : isSubscribed ? (
+              <div className="flex items-center gap-1.5 text-[10px] text-emerald-600 dark:text-emerald-400 font-bold pt-2 border-t border-emerald-100 dark:border-emerald-900/40">
+                <CheckCircle className="h-3 w-3" />
+                Perangkat ini terdaftar untuk menerima notifikasi.
+              </div>
+            ) : (
+              <p className="text-[10px] text-slate-500 dark:text-slate-400 font-medium pt-1 border-t border-slate-100 dark:border-slate-700/60">
+                Aktifkan untuk menerima pemberitahuan otomatis ke HP/Laptop.
               </p>
             )}
           </div>
