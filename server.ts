@@ -12,6 +12,22 @@ async function startServer() {
 
   app.use(express.json());
 
+  // Set No-Cache headers for Service Worker and Config files to ensure users get updates immediately
+  app.use((req, res, next) => {
+    const url = req.url.split('?')[0];
+    if (
+      url.endsWith('sw.js') || 
+      url.endsWith('app_config.json') || 
+      url.endsWith('manifest.json') ||
+      url.endsWith('version.json')
+    ) {
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+      res.setHeader('Pragma', 'no-cache');
+      res.setHeader('Expires', '0');
+    }
+    next();
+  });
+
   // Server-side response cache for D1 proxy GET requests to minimize D1 read usage
   const d1ServerCache = new Map<string, { data: string; contentType: string; status: number; timestamp: number }>();
   const SERVER_CACHE_TTL_MS = 3 * 60 * 1000; // 3 minutes TTL

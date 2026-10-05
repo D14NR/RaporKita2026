@@ -16,7 +16,7 @@ interface UpdateCheckerModalProps {
   onUpdateDismiss?: () => void;
 }
 
-export const CURRENT_CLIENT_VERSION = '1.2.0'; // Base installed version in cached bundle
+export const CURRENT_CLIENT_VERSION = '1.2.2'; // Base installed version in cached bundle
 
 export const UpdateCheckerModal: React.FC<UpdateCheckerModalProps> = ({
   manualCheckTrigger = 0,
@@ -25,7 +25,7 @@ export const UpdateCheckerModal: React.FC<UpdateCheckerModalProps> = ({
   const [isOpen, setIsOpen] = useState(false);
   const [isChecking, setIsChecking] = useState(false);
   const [updateConfig, setUpdateConfig] = useState<AppConfig | null>(null);
-  const [installedVersion, setInstalledVersion] = useState<string>('1.2.0');
+  const [installedVersion, setInstalledVersion] = useState<string>('1.2.2');
   const [isUpToDateNotice, setIsUpToDateNotice] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
 

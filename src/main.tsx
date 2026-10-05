@@ -6,7 +6,7 @@ import './index.css';
 // Registrasi Service Worker & Periodic Background Sync (15 Menit) untuk PWA
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js?v=4', { updateViaCache: 'none' })
+    navigator.serviceWorker.register('/sw.js?v=5', { updateViaCache: 'none' })
       .then(async (registration) => {
         console.log('ServiceWorker berhasil diregistrasi dengan scope:', registration.scope);
 

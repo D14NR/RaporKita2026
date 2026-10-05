@@ -1,9 +1,9 @@
 {
-  "version": "1.2.0",
-  "build_number": 3,
-  "release_date": "2026-08-03",
+  "version": "1.2.2",
+  "build_number": 4,
+  "release_date": "2026-10-04",
   "force_update": true,
-  "update_message": "Versi terbaru CRapor Siswa v1.2.0 tersedia. Termasuk fitur Uji Materi dan perbaikan sistem.",
+  "update_message": "Pembaruan sistem v1.2.2: Peningkatan mekanisme sinkronisasi otomatis dan pembaruan aplikasi real-time.",
   "maintenance": false,
   "maintenance_message": "Sistem sedang dalam pemeliharaan."
 }
