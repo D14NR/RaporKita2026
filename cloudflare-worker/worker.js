@@ -5,7 +5,7 @@ export default {
     const corsHeaders = {
       'Access-Control-Allow-Origin': '*',
       'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept, X-Requested-With'
+      'Access-Control-Allow-Headers': '*'
     };
 
     const jsonResponse = (data, status = 200, extraHeaders = {}) => new Response(JSON.stringify(data), {

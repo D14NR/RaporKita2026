@@ -21,7 +21,7 @@ import {
   Download,
   ChevronDown
 } from 'lucide-react';
-import { d1, d1Kbm } from '../lib/d1';
+import { d1, d1Kbm, DIRECT_D1_WORKER_URL } from '../lib/d1';
 import { DataSiswa } from '../types';
 import { PWAInstallModal } from './PWAInstallModal';
 
@@ -187,49 +187,55 @@ export default function Login({ onLoginSuccess, useD1, dbStatus, onToggleDemoMod
     let fetchedData: any[] = [];
     try {
       const { data, error: err } = await d1.from('data_siswa').select('*');
-      if (err) throw err;
-      fetchedData = data || [];
-    } catch (netErr: any) {
-      console.warn('D1 fetch failed in search, using fallback students:', netErr);
-      fetchedData = [
-        {
-          id: 'f3b89063-ea08-4171-8ea8-3a25cf0c9a01',
-          nis: '60-444-001-6',
-          nama_lengkap: 'Ahmad Rafli Fauzan',
-          nama: 'Ahmad Rafli Fauzan',
-          tanggal_lahir: '2010-04-15',
-          jenjang_studi: 'SMA',
-          cabang: 'Jakarta Selatan',
-          asal_sekolah: 'SMP Negeri 1 Jakarta',
-          kelompok_kelas: 'X-IPA-1',
-          mata_pelajaran: 'Matematika Wajib, Fisika, Kimia, Biologi'
+      if (!err && Array.isArray(data) && data.length > 0) {
+        fetchedData = data;
+      }
+    } catch (d1Err) {
+      console.warn('d1 search fetch error, trying direct worker:', d1Err);
+    }
+
+    if (fetchedData.length === 0) {
+      try {
+        const directRes = await fetch(`${DIRECT_D1_WORKER_URL}/db/data_siswa?_t=${Date.now()}`);
+        if (directRes.ok) {
+          const directJson = await directRes.json();
+          fetchedData = directJson?.data || (Array.isArray(directJson) ? directJson : []);
         }
-      ];
+      } catch (directErr) {
+        console.warn('Direct worker search fetch failed:', directErr);
+      }
     }
 
     try {
+      if (fetchedData.length === 0) {
+        setSearchError('Koneksi ke database sedang lambat atau terputus. Silakan coba klik tombol Cari NIS lagi.');
+        setIsSearching(false);
+        return;
+      }
+
       const normalizedInput = trimmedName.toLowerCase();
+      const searchTerms = normalizedInput.split(/\s+/).filter(Boolean);
       const normalizedCabang = searchCabang.trim().toLowerCase();
 
       const filtered = fetchedData.filter((row: any) => {
-        const namaLengkap = String(row?.nama_lengkap || row?.nama || '').trim();
-        const nama = String(row?.nama || '').trim();
-        const cabang = String(row?.cabang || '').trim();
+        const namaLengkap = String(row?.nama_lengkap || row?.nama || '').trim().toLowerCase();
+        const nama = String(row?.nama || '').trim().toLowerCase();
+        const cabang = String(row?.cabang || '').trim().toLowerCase();
 
-        const matchesName =
-          namaLengkap.toLowerCase().includes(normalizedInput) ||
-          nama.toLowerCase().includes(normalizedInput) ||
-          `${namaLengkap} ${nama}`.toLowerCase().includes(normalizedInput);
+        // Match full phrase or all individual words
+        const fullMatch = namaLengkap.includes(normalizedInput) || nama.includes(normalizedInput);
+        const termsMatch = searchTerms.length > 0 && searchTerms.every(term => namaLengkap.includes(term) || nama.includes(term));
 
-        const matchesCabang = !normalizedCabang || cabang.toLowerCase().includes(normalizedCabang);
+        const matchesName = fullMatch || termsMatch;
+        const matchesCabang = !normalizedCabang || cabang.includes(normalizedCabang);
 
         return matchesName && matchesCabang;
-      }).slice(0, 10);
+      }).slice(0, 15);
 
       if (filtered.length > 0) {
         setSearchResult(filtered);
       } else {
-        setSearchError('Siswa tidak ditemukan. Pastikan nama sudah benar.');
+        setSearchError(`Siswa dengan nama "${searchName}" tidak ditemukan di database. Pastikan nama sudah sesuai.`);
       }
     } catch (err: any) {
       setSearchError(err.message || 'Terjadi kesalahan saat mencari data.');
@@ -293,20 +299,38 @@ export default function Login({ onLoginSuccess, useD1, dbStatus, onToggleDemoMod
           nisExists = true;
         }
       } catch (err) {
-        console.warn('D1 fetch error, using fallback profile:', err);
+        console.warn('D1 fetch error, attempting direct worker query:', err);
       }
 
+      // Backup direct query to worker if proxy didn't return results
       if (!data || data.length === 0) {
+        try {
+          const directRes = await fetch(`${DIRECT_D1_WORKER_URL}/db/data_siswa?in_nis=${encodeURIComponent(possibleNisList.join(','))}&_t=${Date.now()}`);
+          if (directRes.ok) {
+            const directJson = await directRes.json();
+            const list = directJson?.data || (Array.isArray(directJson) ? directJson : []);
+            if (list.length > 0) {
+              data = list;
+              nisExists = true;
+            }
+          }
+        } catch (directErr) {
+          console.warn('Direct worker fetch in login failed:', directErr);
+        }
+      }
+
+      // If still empty but matched demo NIS, provide demo fallback
+      if ((!data || data.length === 0) && (possibleNisList.includes('60-444-001-6') || possibleNisList.includes('604440016'))) {
         data = [{
-          id: `stu-${cleanInputNis || trimmedNis}`,
-          nis: trimmedNis,
-          nama_lengkap: trimmedNis === '60-444-001-6' ? 'Ahmad Rafli Fauzan' : `Siswa (${trimmedNis})`,
-          nama: trimmedNis === '60-444-001-6' ? 'Ahmad Rafli Fauzan' : `Siswa (${trimmedNis})`,
-          tanggal_lahir: trimmedDob,
+          id: 'f3b89063-ea08-4171-8ea8-3a25cf0c9a01',
+          nis: '60-444-001-6',
+          nama_lengkap: 'Ahmad Rafli Fauzan',
+          nama: 'Ahmad Rafli Fauzan',
+          tanggal_lahir: '2010-04-15',
           jenjang_studi: 'SMA',
-          cabang: 'Cabang Utama',
-          asal_sekolah: 'Sekolah Siswa',
-          kelompok_kelas: 'X-IPA',
+          cabang: 'Jakarta Selatan',
+          asal_sekolah: 'SMP Negeri 1 Jakarta',
+          kelompok_kelas: 'X-IPA-1',
           mata_pelajaran: 'Matematika Wajib, Fisika, Kimia, Biologi'
         }];
         nisExists = true;

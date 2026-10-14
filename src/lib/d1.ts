@@ -1,3 +1,4 @@
+export const DIRECT_D1_WORKER_URL = 'https://raporkita-db.dianrizkisofiawan0431.workers.dev';
 const DEFAULT_D1_API_URL = '/api/d1';
 
 const metaEnv = (import.meta as any).env || {};
@@ -259,15 +260,47 @@ async function readJson<T = any>(url: string, init?: RequestInit): Promise<T> {
     }
   }
 
-  const response = await fetch(url, init);
-  const text = await response.text();
-  if (!text) {
+  let text = '';
+  let ok = false;
+  let triedPrimary = false;
+
+  try {
+    const response = await fetch(url, init);
+    text = await response.text();
+    ok = response.ok;
+    triedPrimary = true;
+  } catch (err) {
+    console.warn(`Primary fetch to ${url} failed, attempting direct worker fallback:`, err);
+  }
+
+  // If primary fetch failed or returned HTML (e.g. Cloudflare Pages SPA fallback), fallback to direct D1 worker!
+  const isHtml = text.trim().startsWith('<') || text.includes('<!doctype html>');
+  if (!triedPrimary || !ok || isHtml) {
+    const directUrl = url.startsWith('http')
+      ? url
+      : `${DIRECT_D1_WORKER_URL}${url.replace(/^\/api\/d1/, '')}`;
+
+    if (directUrl !== url) {
+      try {
+        const fallbackRes = await fetch(directUrl, init);
+        const fallbackText = await fallbackRes.text();
+        if (fallbackRes.ok && fallbackText && !fallbackText.trim().startsWith('<')) {
+          text = fallbackText;
+          ok = fallbackRes.ok;
+        }
+      } catch (fallbackErr) {
+        console.warn(`Direct worker fallback to ${directUrl} failed:`, fallbackErr);
+      }
+    }
+  }
+
+  if (!text || text.trim().startsWith('<')) {
     return {} as T;
   }
 
   try {
     const parsed = JSON.parse(text) as T;
-    if (isGet && response.ok) {
+    if (isGet && ok) {
       clientQueryCache.set(url, { data: parsed, timestamp: Date.now() });
     }
     return parsed;
@@ -463,10 +496,11 @@ class D1Query {
       if (this.limitValue && Number.isFinite(this.limitValue)) {
         params.set('limit', String(this.limitValue));
       }
+      params.set('_t', String(Date.now()));
 
       const queryString = params.toString();
       const url = `${this.apiUrl}/db/${tableName}${queryString ? `?${queryString}` : ''}`;
-      const payload = await readJson(url, { method: 'GET', headers: { Accept: 'application/json', 'X-No-Cache': '1', 'Cache-Control': 'no-cache' } });
+      const payload = await readJson(url, { method: 'GET', headers: { Accept: 'application/json' } });
       const responsePayload = payload && typeof payload === 'object' && 'success' in payload && payload.success
         ? (Array.isArray((payload as any).data) ? (payload as any).data : [])
         : (Array.isArray(payload) ? payload : toJson(payload, this.table));
