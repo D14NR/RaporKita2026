@@ -11,7 +11,7 @@ if ('serviceWorker' in navigator) {
     
     // Gunakan query param statis untuk cache busting manual jika diperlukan, 
     // jangan gunakan Date.now() karena akan menyebabkan infinite reload loop.
-    const swUrl = '/sw.js?v=1.2.4'; 
+    const swUrl = '/sw.js?v=1.2.5'; 
     navigator.serviceWorker.register(swUrl, { updateViaCache: 'none' })
       .then(async (registration) => {
         console.log('ServiceWorker berhasil diregistrasi dengan scope:', registration.scope);
