@@ -463,7 +463,7 @@ class D1Query {
 
       const queryString = params.toString();
       const url = `${this.apiUrl}/db/${tableName}${queryString ? `?${queryString}` : ''}`;
-      const payload = await readJson(url, { method: 'GET', headers: { Accept: 'application/json' } });
+      const payload = await readJson(url, { method: 'GET', headers: { Accept: 'application/json', 'X-No-Cache': '1', 'Cache-Control': 'no-cache' } });
       const responsePayload = payload && typeof payload === 'object' && 'success' in payload && payload.success
         ? (Array.isArray((payload as any).data) ? (payload as any).data : [])
         : (Array.isArray(payload) ? payload : toJson(payload, this.table));

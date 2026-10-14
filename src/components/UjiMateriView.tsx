@@ -31,7 +31,7 @@ import {
   ThumbsDown
 } from 'lucide-react';
 import { DataSiswa } from '../types';
-import { d1 } from '../lib/d1';
+import { d1, invalidateClientD1Cache } from '../lib/d1';
 import { supabaseUji } from '../lib/supabaseUji';
 import { formatTanggalIndo } from '../lib/dateUtils';
 import { formatScore, roundScore } from '../lib/formatUtils';
@@ -711,7 +711,15 @@ export const UjiMateriView: React.FC<UjiMateriViewProps> = ({ currentStudent }) 
     };
   }, []);
 
+  const handleRefreshEvaluations = async () => {
+    invalidateClientD1Cache('nilai_evaluasi');
+    await fetchAttemptsFromD1();
+    await fetchSentEvaluations();
+    alert('Status penilaian berhasil disegarkan dari database.');
+  };
+
   const fetchStudentEvaluationRows = async () => {
+    invalidateClientD1Cache('nilai_evaluasi');
     const nis = currentStudent?.nis || localStorage.getItem('active_nis');
     const studentId = currentStudent?.id;
     const columns = 'id,siswa_id,nis,nama_siswa,jenjang_studi,tanggal,kode_pengajar,nama_pengajar,mata_pelajaran,sub_bab_kode_soal,nilai,cabang,created_at,updated_at';
@@ -1085,6 +1093,14 @@ export const UjiMateriView: React.FC<UjiMateriViewProps> = ({ currentStudent }) 
                   className="p-1 bg-white/10 hover:bg-white/20 rounded-lg text-slate-300 hover:text-white transition cursor-pointer shrink-0"
                 >
                   <RefreshCw className={`h-3.5 w-3.5 ${isLoadingDb ? 'animate-spin text-indigo-400' : ''}`} />
+                </button>
+                <button 
+                  onClick={handleRefreshEvaluations}
+                  title="Segarkan Status Nilai (Clear Cache)"
+                  className="px-2 py-1 bg-sky-600/40 hover:bg-sky-600/60 border border-sky-400/30 rounded-lg text-xs font-bold text-sky-200 flex items-center gap-1 transition cursor-pointer shrink-0"
+                >
+                  <RefreshCw className="h-3 w-3" />
+                  <span>Segarkan Status</span>
                 </button>
               </div>
               <p className="text-[10px] sm:text-xs text-slate-300 flex items-center gap-1.5 sm:gap-2 mt-0.5 truncate">

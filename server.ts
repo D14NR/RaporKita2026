@@ -79,10 +79,16 @@ async function startServer() {
       return;
     }
 
-    // For GET requests, check cache
+    // For GET requests, check cache (unless _cb or no_cache is requested)
+    const hasNoCache = urlPath.includes('_cb=') || urlPath.includes('no_cache=1') || req.headers['x-no-cache'] === '1' || req.headers['cache-control'] === 'no-cache';
     const cacheKey = urlPath;
     const now = Date.now();
-    const cached = d1ServerCache.get(cacheKey);
+
+    if (hasNoCache) {
+      clearD1ServerCache(urlPath);
+    }
+
+    const cached = hasNoCache ? null : d1ServerCache.get(cacheKey);
 
     if (cached && (now - cached.timestamp < SERVER_CACHE_TTL_MS)) {
       res.status(cached.status).set('Content-Type', cached.contentType).send(cached.data);
