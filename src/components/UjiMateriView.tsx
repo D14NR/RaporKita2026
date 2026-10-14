@@ -949,6 +949,34 @@ export const UjiMateriView: React.FC<UjiMateriViewProps> = ({ currentStudent }) 
     const durationUsed = (activeQuizPackage.timeLimitMinutes * 60) - timeRemainingSeconds;
 
     const saveEvaluationToD1 = async () => {
+      const nis = currentStudent?.nis || localStorage.getItem('active_nis');
+      const studentId = currentStudent?.id;
+
+      if (nis || studentId) {
+        let checkRows: any[] = [];
+        if (nis) {
+          const { data } = await d1.from('nilai_evaluasi').select('nis, siswa_id, sub_bab_kode_soal').eq('nis', nis);
+          if (data) checkRows = data;
+        }
+        if (checkRows.length === 0 && studentId) {
+          const { data } = await d1.from('nilai_evaluasi').select('nis, siswa_id, sub_bab_kode_soal').eq('siswa_id', studentId);
+          if (data) checkRows = data;
+        }
+
+        const packageSubBab = normalizeAnalysisText(activeQuizPackage.subBab);
+        const packageTitle = normalizeAnalysisText(activeQuizPackage.title);
+        const alreadyExists = checkRows.some((row: any) => {
+          const submittedSubBab = normalizeAnalysisText(row.sub_bab_kode_soal);
+          return submittedSubBab.length > 0 && (
+            submittedSubBab === packageSubBab || submittedSubBab === packageTitle
+          );
+        });
+
+        if (alreadyExists || isPackageCompleted(activeQuizPackage)) {
+          throw new Error('Anda sudah mengirimkan nilai untuk Uji Materi ini sebelumnya dan tidak diperbolehkan mengirimkan ulang.');
+        }
+      }
+
       const payload = await buildNilaiEvaluasiRecord({
         packageData: activeQuizPackage,
         score,

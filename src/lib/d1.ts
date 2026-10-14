@@ -61,9 +61,11 @@ const TABLE_ALLOWED_COLUMNS: Record<string, string[]> = {
     'mata_pelajaran', 'cabang', 'created_at', 'updated_at'
   ],
   nilai_evaluasi: [
-    'id', 'nis', 'nama_siswa', 'tanggal', 'mata_pelajaran', 'sub_bab_kode_soal',
+    'id', 'siswa_id', 'nis', 'nama_siswa', 'jenjang_studi', 'tanggal',
+    'kode_pengajar', 'nama_pengajar', 'mata_pelajaran', 'sub_bab_kode_soal',
+    'nilai', 'cabang', 'created_at', 'updated_at',
     'jumlah_soal', 'jawaban_benar', 'jawaban_salah', 'jawaban_kosong',
-    'nilai_prosentase', 'rekomendasi', 'cabang', 'created_at', 'updated_at'
+    'nilai_prosentase', 'rekomendasi'
   ]
 };
 
