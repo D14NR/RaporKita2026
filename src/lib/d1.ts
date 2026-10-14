@@ -66,6 +66,9 @@ const TABLE_ALLOWED_COLUMNS: Record<string, string[]> = {
     'nilai', 'cabang', 'created_at', 'updated_at',
     'jumlah_soal', 'jawaban_benar', 'jawaban_salah', 'jawaban_kosong',
     'nilai_prosentase', 'rekomendasi'
+  ],
+  mata_pelajaran: [
+    'id', 'mata_pelajaran', 'created_at', 'updated_at'
   ]
 };
 
@@ -904,6 +907,13 @@ CREATE TABLE IF NOT EXISTS nilai_snbt (
     created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
     updated_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
     FOREIGN KEY (siswa_id) REFERENCES data_siswa (id) ON UPDATE CASCADE ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS mata_pelajaran (
+    id TEXT PRIMARY KEY NOT NULL,
+    mata_pelajaran TEXT NOT NULL,
+    created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    updated_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );
 
 CREATE TABLE IF NOT EXISTS push_subscriptions_siswa (

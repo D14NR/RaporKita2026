@@ -365,25 +365,31 @@ export default function App() {
 
   useEffect(() => {
     const loadMataPelajaranOptions = async () => {
+      const defaultSubjects = [
+        'Matematika', 'Fisika', 'Kimia', 'Biologi', 
+        'Bahasa Indonesia', 'Bahasa Inggris', 'Ekonomi', 
+        'Geografi', 'Sejarah', 'Sosiologi', 'Informatika', 'PKN', 'Seni Budaya'
+      ];
       try {
         const { data, error } = await d1
           .from('mata_pelajaran')
           .select('*')
           .order('mata_pelajaran', { ascending: true });
 
-        if (error) {
-          throw error;
+        if (error || !data || data.length === 0) {
+          setMataPelajaranOptions(defaultSubjects);
+          return;
         }
 
         const options = (data || [])
           .map((row: any) => (row.mata_pelajaran || row.nama_mata_pelajaran || row.mapel || row.subject || '').trim())
           .filter(Boolean);
 
-        const uniqueOptions: string[] = [...new Set(options)] as string[];
-        setMataPelajaranOptions(uniqueOptions);
+        const uniqueOptions: string[] = [...new Set([...defaultSubjects, ...options])] as string[];
+        setMataPelajaranOptions(uniqueOptions.sort());
       } catch (err) {
-        console.error('Error loading mata_pelajaran options:', err);
-        setMataPelajaranOptions([]);
+        console.warn('Using default mata_pelajaran options due to network/table absence:', err);
+        setMataPelajaranOptions(defaultSubjects);
       }
     };
 
