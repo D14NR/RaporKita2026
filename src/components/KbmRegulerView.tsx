@@ -48,12 +48,26 @@ export const KbmRegulerView: React.FC<KbmRegulerViewProps> = ({
   const [selectedMonth, setSelectedMonth] = useState<string>('ALL');
   const [currentPage, setCurrentPage] = useState<number>(1);
   const [itemsPerPage, setItemsPerPage] = useState<number>(6);
+  const [selectedKelasFilter, setSelectedKelasFilter] = useState<string>('ALL');
 
   const studentData = selectedStudentData || currentStudent;
   const studentName = (studentData as DataSiswa)?.nama || (studentData as Student)?.name || 'Siswa';
   const studentNis = (studentData as DataSiswa)?.nis || (studentData as Student)?.id || '-';
   const studentCabang = (studentData as DataSiswa)?.cabang || 'Semarang 2';
-  const studentKelas = (studentData as DataSiswa)?.kelompok_kelas || (studentData as Student)?.class || '2 IPS C';
+  const studentKelas = (studentData as DataSiswa)?.kelompok_kelas || (studentData as Student)?.class || '-';
+  const studentJenjang = (studentData as DataSiswa)?.jenjang_studi || (() => {
+    const k = String(studentKelas).toLowerCase();
+    if (k.includes('1 sma') || k.includes('sma 1')) return '1 SMA';
+    if (k.includes('2 sma') || k.includes('sma 2')) return '2 SMA';
+    if (k.includes('3 sma') || k.includes('sma 3')) return '3 SMA';
+    if (k.includes('1 smp') || k.includes('smp 1')) return '1 SMP';
+    if (k.includes('2 smp') || k.includes('smp 2')) return '2 SMP';
+    if (k.includes('3 smp') || k.includes('smp 3')) return '3 SMP';
+    if (k.includes('6 sd')) return '6 SD';
+    if (k.includes('5 sd')) return '5 SD';
+    if (k.includes('4 sd')) return '4 SD';
+    return '1 SMA';
+  })();
 
   // Extract available months for historical filtering
   const availableMonths = useMemo(() => {
@@ -72,6 +86,17 @@ export const KbmRegulerView: React.FC<KbmRegulerViewProps> = ({
     return Array.from(monthsMap.entries())
       .sort((a, b) => b[0].localeCompare(a[0]))
       .map(([value, label]) => ({ value, label }));
+  }, [regularSchedules]);
+
+  // Extract available classes within the filtered branch & jenjang
+  const availableKelasList = useMemo(() => {
+    const set = new Set<string>();
+    regularSchedules.forEach(item => {
+      if (item.kelas) {
+        set.add(String(item.kelas).trim());
+      }
+    });
+    return Array.from(set).sort((a, b) => a.localeCompare(b, 'id'));
   }, [regularSchedules]);
 
   // Filter schedules according to period (Active vs History vs All)
@@ -93,9 +118,16 @@ export const KbmRegulerView: React.FC<KbmRegulerViewProps> = ({
         if (ym !== selectedMonth) return false;
       }
 
+      // 3. Class filter
+      if (selectedKelasFilter !== 'ALL') {
+        if (!item.kelas || String(item.kelas).trim().toLowerCase() !== selectedKelasFilter.toLowerCase()) {
+          return false;
+        }
+      }
+
       return true;
     });
-  }, [regularSchedules, periodFilter, selectedMonth, isThisOrNextMonth]);
+  }, [regularSchedules, periodFilter, selectedMonth, selectedKelasFilter, isThisOrNextMonth]);
 
   // Stats calculation based on current scope
   const stats = useMemo(() => {
@@ -264,7 +296,7 @@ export const KbmRegulerView: React.FC<KbmRegulerViewProps> = ({
               Jadwal KBM Reguler
             </h2>
             <p className="text-sm text-slate-300 max-w-xl font-normal leading-relaxed">
-              Jadwal tatap muka, mata pelajaran, dan pengampu kelas reguler siswa berdasarkan cabang dan jenjang studi.
+              Jadwal tatap muka, mata pelajaran, dan pengampu kelas reguler siswa untuk <strong className="text-white font-semibold">Cabang {studentCabang}</strong> dan <strong className="text-white font-semibold">Jenjang Studi {studentJenjang}</strong>.
             </p>
           </div>
 
@@ -275,10 +307,16 @@ export const KbmRegulerView: React.FC<KbmRegulerViewProps> = ({
             </div>
             <div>
               <div className="text-xs font-bold text-white leading-snug">{studentName}</div>
-              <div className="text-[11px] text-slate-400 flex items-center gap-1.5 mt-0.5">
-                <span>Cabang: {studentCabang}</span>
+              <div className="text-[11px] text-slate-400 flex flex-wrap items-center gap-1.5 mt-0.5">
+                <span>Cabang: <strong className="text-white font-semibold">{studentCabang}</strong></span>
                 <span>•</span>
-                <span className="text-sky-300 font-semibold">{studentKelas}</span>
+                <span>Jenjang: <strong className="text-sky-300 font-semibold">{studentJenjang}</strong></span>
+                {studentKelas && studentKelas !== '-' && (
+                  <>
+                    <span>•</span>
+                    <span className="text-slate-300">Kelas: {studentKelas}</span>
+                  </>
+                )}
               </div>
             </div>
           </div>
@@ -409,27 +447,51 @@ export const KbmRegulerView: React.FC<KbmRegulerViewProps> = ({
           </button>
         </div>
 
-        {/* Month Selector for quick jump */}
-        {availableMonths.length > 0 && (
-          <div className="flex items-center gap-2">
-            <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 hidden sm:inline">
-              Pilih Bulan:
-            </span>
-            <select
-              id="select-kbm-reguler-month"
-              value={selectedMonth}
-              onChange={(e) => setSelectedMonth(e.target.value)}
-              className="px-3 py-1.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-sky-500"
-            >
-              <option value="ALL">Semua Bulan ({availableMonths.length})</option>
-              {availableMonths.map((m) => (
-                <option key={m.value} value={m.value}>
-                  {m.label}
-                </option>
-              ))}
-            </select>
-          </div>
-        )}
+        <div className="flex flex-wrap items-center gap-3">
+          {/* Class Filter Selector */}
+          {availableKelasList.length > 0 && (
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 hidden sm:inline">
+                Pilih Kelas:
+              </span>
+              <select
+                id="select-kbm-reguler-kelas"
+                value={selectedKelasFilter}
+                onChange={(e) => setSelectedKelasFilter(e.target.value)}
+                className="px-3 py-1.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-sky-500"
+              >
+                <option value="ALL">Semua Kelas ({availableKelasList.length})</option>
+                {availableKelasList.map((kName) => (
+                  <option key={kName} value={kName}>
+                    {kName}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {/* Month Selector for quick jump */}
+          {availableMonths.length > 0 && (
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 hidden sm:inline">
+                Pilih Bulan:
+              </span>
+              <select
+                id="select-kbm-reguler-month"
+                value={selectedMonth}
+                onChange={(e) => setSelectedMonth(e.target.value)}
+                className="px-3 py-1.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-sky-500"
+              >
+                <option value="ALL">Semua Bulan ({availableMonths.length})</option>
+                {availableMonths.map((m) => (
+                  <option key={m.value} value={m.value}>
+                    {m.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* 4. Toolbar: Search, Status Filter & Pagination Limit Settings */}
@@ -522,7 +584,7 @@ export const KbmRegulerView: React.FC<KbmRegulerViewProps> = ({
                 : 'Seluruh Arsip KBM Reguler'}
             </p>
             <p className="text-xs text-sky-800 dark:text-sky-300 mt-0.5">
-              Cabang <strong className="font-bold">{studentCabang}</strong> • Kelas <strong className="font-bold">{studentKelas}</strong>
+              Cabang <strong className="font-bold">{studentCabang}</strong> • Jenjang Studi <strong className="font-bold">{studentJenjang}</strong> {studentKelas && studentKelas !== '-' ? <>• Kelas Siswa: <strong className="font-bold">{studentKelas}</strong></> : null}
             </p>
           </div>
         </div>
@@ -551,8 +613,8 @@ export const KbmRegulerView: React.FC<KbmRegulerViewProps> = ({
             {searchQuery
               ? 'Tidak ada jadwal yang cocok dengan kata kunci pencarian Anda.'
               : periodFilter === 'HISTORY'
-              ? 'Belum ada catatan jadwal masa lampau untuk cabang dan kelas ini.'
-              : `Jadwal tidak ditemukan untuk Cabang ${studentCabang} dan Jenjang Studi ${(studentData as any)?.jenjang_studi || '-'}.`}
+              ? `Belum ada catatan jadwal masa lampau untuk Cabang ${studentCabang} dan Jenjang Studi ${studentJenjang}.`
+              : `Jadwal tidak ditemukan untuk Cabang ${studentCabang} dan Jenjang Studi ${studentJenjang}.`}
           </p>
           {periodFilter === 'HISTORY' && (
             <button

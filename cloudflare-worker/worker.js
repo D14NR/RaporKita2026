@@ -197,7 +197,7 @@ export default {
             ? ` ORDER BY "${orderColumn}" ${url.searchParams.get('ascending') === 'false' ? 'DESC' : 'ASC'}`
             : '';
           const limitValue = Number(url.searchParams.get('limit'));
-          const limitSql = Number.isInteger(limitValue) && limitValue > 0 ? ` LIMIT ${Math.min(limitValue, 500)}` : '';
+          const limitSql = Number.isInteger(limitValue) && limitValue > 0 ? ` LIMIT ${Math.min(limitValue, 20000)}` : '';
           const whereSql = whereParts.length > 0 ? ` WHERE ${whereParts.join(' AND ')}` : '';
           const res = await env.DB.prepare(`SELECT * FROM "${table}"${whereSql}${orderSql}${limitSql}`).bind(...bindings).all();
           return jsonResponse(res.results || [], 200);

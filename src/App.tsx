@@ -38,7 +38,7 @@ import {
   Wifi,
   WifiOff
 } from 'lucide-react';
-import { d1, d1Kbm, DB_SETUP_SQL, invalidateClientD1Cache, baseApiUrl } from './lib/d1';
+import { d1, d1Kbm, DB_SETUP_SQL, invalidateClientD1Cache, baseApiUrl, DIRECT_D1_WORKER_URL } from './lib/d1';
 import { 
   Student, 
   DataSiswa,
@@ -80,7 +80,7 @@ import { PWAInstallModal } from './components/PWAInstallModal';
 import { requestNotificationPermission } from './lib/pushNotifications';
 import { formatScore, roundScore } from './lib/formatUtils';
 
-const APP_VERSION = '1.2.4';
+const APP_VERSION = '1.2.12';
 
 export default function App() {
   // Manual Version Check Trigger
@@ -1047,32 +1047,68 @@ export default function App() {
         let queryKhusus = d1Kbm.from('jadwal_khusus').select('*');
         
         // Match with the active student's profile data
-        const activeCabang = (selectedStudentData?.cabang || currentStudent.cabang || '').trim();
-        const activeKelas = (selectedStudentData?.kelompok_kelas || currentStudent.kelompok_kelas || '').trim();
-        const activeJenjang = (selectedStudentData?.jenjang_studi || currentStudent.jenjang_studi || '').trim();
-        const activeSekolah = (selectedStudentData?.asal_sekolah || currentStudent.asal_sekolah || '').trim();
+        const studentProfile = selectedStudentData || currentStudent;
+        let activeCabang = (studentProfile?.cabang || '').trim();
+        let activeJenjang = (studentProfile?.jenjang_studi || '').trim();
+        const activeKelas = (studentProfile?.kelompok_kelas || (studentProfile as any)?.class || '').trim();
+        const activeSekolah = (studentProfile?.asal_sekolah || '').trim();
+
+        if (!activeCabang) activeCabang = 'Semarang 2';
+        if (!activeJenjang && activeKelas) {
+          const lKelas = activeKelas.toLowerCase();
+          if (lKelas.includes('1 sma') || lKelas.includes('sma 1')) activeJenjang = '1 SMA';
+          else if (lKelas.includes('2 sma') || lKelas.includes('sma 2')) activeJenjang = '2 SMA';
+          else if (lKelas.includes('3 sma') || lKelas.includes('sma 3')) activeJenjang = '3 SMA';
+          else if (lKelas.includes('1 smp') || lKelas.includes('smp 1')) activeJenjang = '1 SMP';
+          else if (lKelas.includes('2 smp') || lKelas.includes('smp 2')) activeJenjang = '2 SMP';
+          else if (lKelas.includes('3 smp') || lKelas.includes('smp 3')) activeJenjang = '3 SMP';
+          else if (lKelas.includes('6 sd') || lKelas.includes('sd 6')) activeJenjang = '6 SD';
+          else if (lKelas.includes('5 sd') || lKelas.includes('sd 5')) activeJenjang = '5 SD';
+          else if (lKelas.includes('4 sd') || lKelas.includes('sd 4')) activeJenjang = '4 SD';
+        }
+        if (!activeJenjang) activeJenjang = '1 SMA';
         
         if (activeCabang) {
           queryReg = queryReg.ilike('cabang', `%${activeCabang}%`);
           queryKhusus = queryKhusus.ilike('cabang', `%${activeCabang}%`);
-        }
-        
-        if (activeJenjang) {
-          queryReg = queryReg.ilike('jenjang_studi', `%${activeJenjang}%`);
-          queryKhusus = queryKhusus.ilike('jenjang_studi', `%${activeJenjang}%`);
         }
 
         // Fetch all rows matching the branch to perform robust case-insensitive filtering in memory
         queryReg = queryReg.order('class_order', { ascending: true });
         queryKhusus = queryKhusus.order('tanggal', { ascending: false }).order('class_order', { ascending: true });
         
-        const [regRes, khususRes] = await Promise.all([queryReg, queryKhusus]);
+        let rawRegSchedules: any[] = [];
+        let rawKhususSchedules: any[] = [];
 
-        if (regRes.error) throw regRes.error;
-        if (khususRes.error) throw khususRes.error;
+        try {
+          const [regRes, khususRes] = await Promise.all([queryReg, queryKhusus]);
+          if (!regRes.error && regRes.data && regRes.data.length > 0) {
+            rawRegSchedules = regRes.data;
+          }
+          if (!khususRes.error && khususRes.data && khususRes.data.length > 0) {
+            rawKhususSchedules = khususRes.data;
+          }
+        } catch (fetchErr) {
+          console.warn('Primary KBM query error, attempting direct worker fallback:', fetchErr);
+        }
 
-        const rawRegSchedules = (regRes.data || []);
-        const rawKhususSchedules = (khususRes.data || []);
+        // Direct worker fallback to ensure no schedules are lost or capped
+        if (rawRegSchedules.length === 0) {
+          try {
+            const directUrl = `${DIRECT_D1_WORKER_URL}/db/jadwal_kbm?ilike_cabang=${encodeURIComponent(activeCabang)}&_t=${Date.now()}`;
+            const fbRes = await fetch(directUrl, { headers: { Accept: 'application/json' } });
+            if (fbRes.ok) {
+              const fbJson = await fbRes.json();
+              const list = Array.isArray(fbJson) ? fbJson : (fbJson?.data || []);
+              if (list.length > 0) {
+                rawRegSchedules = list;
+                rawKhususSchedules = [...list];
+              }
+            }
+          } catch (fbErr) {
+            console.warn('Direct worker fallback for schedules also failed:', fbErr);
+          }
+        }
         
         // Extract student subjects list cleanly (from state or student profile)
         const getStudentSubjectsList = (): string[] => {
@@ -1097,6 +1133,70 @@ export default function App() {
         const studentSubjects = getStudentSubjectsList();
         const normalize = (val: any) => String(val || '').trim().toLowerCase().replace(/\s+/g, ' ');
 
+        // Strict Cabang matching: ensures "Semarang 2" only matches "Semarang 2", never "Semarang 1", "Semarang 4", etc.
+        const isCabangMatch = (studentCabangVal: string, rowCabangVal: string): boolean => {
+          const s = String(studentCabangVal || '').trim().toLowerCase().replace(/\s+/g, ' ');
+          const r = String(rowCabangVal || '').trim().toLowerCase().replace(/\s+/g, ' ');
+          if (!r) return false;
+          if (!s) return true;
+          if (s === r) return true;
+
+          const sNum = s.match(/\d+/)?.[0];
+          const rNum = r.match(/\d+/)?.[0];
+          if (sNum && rNum) {
+            if (sNum !== rNum) return false;
+          } else if (sNum && !rNum) {
+            return false;
+          }
+
+          const sClean = s.replace(/[^a-z0-9]/g, '');
+          const rClean = r.replace(/[^a-z0-9]/g, '');
+          return sClean === rClean || sClean.includes(rClean) || rClean.includes(sClean);
+        };
+
+        // Comprehensive grade level extractor e.g. "1 SMA", "1 SMA 1", "1 SMA 2", "1 SMA-1", "1SMA2"
+        const extractGradeLevel = (str: any): string | null => {
+          if (!str) return null;
+          const s = String(str).trim().toLowerCase();
+          if (!s) return null;
+
+          const m1 = s.match(/\b([1-6])\s*[-_/]?\s*(sma|smp|sd)\b/) || s.match(/\b(sma|smp|sd)\s*[-_/]?\s*([1-6])\b/);
+          if (m1) {
+            const num = /^[1-6]$/.test(m1[1]) ? m1[1] : m1[2];
+            const level = /^(sma|smp|sd)$/.test(m1[1]) ? m1[1] : m1[2];
+            return `${num} ${level}`;
+          }
+
+          const m2 = s.match(/([1-6])\s*(sma|smp|sd)/) || s.match(/(sma|smp|sd)\s*([1-6])/);
+          if (m2) {
+            const num = /^[1-6]$/.test(m2[1]) ? m2[1] : m2[2];
+            const level = /^(sma|smp|sd)$/.test(m2[1]) ? m2[1] : m2[2];
+            return `${num} ${level}`;
+          }
+
+          return null;
+        };
+
+        // Strict Jenjang Studi matching: If student is "1 SMA", matches all classes under 1 SMA (both 1 SMA 1 and 1 SMA 2)
+        const isJenjangMatch = (studentJenjangVal: string, rowJenjangVal: string, rowKelasVal: string): boolean => {
+          const targetGrade = extractGradeLevel(studentJenjangVal);
+          if (!targetGrade) return true;
+
+          // 1. Check row's jenjang_studi
+          const rGrade1 = extractGradeLevel(rowJenjangVal);
+          if (rGrade1) {
+            return rGrade1 === targetGrade;
+          }
+
+          // 2. Check row's kelompok_kelas or kelas (essential for rows where jenjang_studi is empty, e.g. 1 SMA 2)
+          const rGrade2 = extractGradeLevel(rowKelasVal);
+          if (rGrade2) {
+            return rGrade2 === targetGrade;
+          }
+
+          return false;
+        };
+
         const isScheduleMatch = (row: any, targetJenis: 'Reguler' | 'Khusus') => {
           if (!row) return false;
 
@@ -1107,13 +1207,9 @@ export default function App() {
             if (targetJenis === 'Khusus' && !rowJenis.includes('khusus') && rowJenis !== 'khusus') return false;
           }
 
-          // 2. Check Cabang
-          if (activeCabang) {
-            const normCabang = normalize(activeCabang);
-            const rowCabang = normalize(row.cabang);
-            if (rowCabang && !rowCabang.includes(normCabang) && !normCabang.includes(rowCabang)) {
-              return false;
-            }
+          // 2. Check Cabang strictly against student profile Cabang
+          if (!isCabangMatch(activeCabang, row.cabang)) {
+            return false;
           }
 
           // 3. Check Subject existence
@@ -1124,51 +1220,29 @@ export default function App() {
             return false;
           }
 
+          const rowKelas = row.kelompok_kelas || row.kelas || '';
+          const rowJenjang = row.jenjang_studi || '';
+
           if (targetJenis === 'Reguler') {
             // KHUSUS MENU JADWAL KBM REGULER:
-            // Data diambil murni berdasarkan Cabang dan Jenjang Studi saja
-            const normActiveJenjang = normalize(activeJenjang);
-            const rowJenjangRaw = normalize(row.jenjang_studi || row.jenjang);
-
-            if (normActiveJenjang) {
-              if (!rowJenjangRaw) {
-                return false;
-              }
-              const cleanActiveJenjang = normActiveJenjang.replace(/[^a-z0-9]/g, '');
-              const cleanRowJenjang = rowJenjangRaw.replace(/[^a-z0-9]/g, '');
-              if (!cleanRowJenjang.includes(cleanActiveJenjang) && !cleanActiveJenjang.includes(cleanRowJenjang)) {
-                return false;
-              }
+            // Tampil berdasarkan Cabang dan Jenjang Studi siswa (mencakup semua kelas dalam jenjang tersebut, misal 1 SMA 1 & 1 SMA 2)
+            if (!isJenjangMatch(activeJenjang, rowJenjang, rowKelas)) {
+              return false;
             }
 
             return true;
           } else {
             // KHUSUS MENU JADWAL KBM KHUSUS:
-            // Data diambil murni berdasarkan Cabang, Jenjang Studi, dan Asal Sekolah saja
-            
-            // 1. Check Jenjang Studi
-            const normActiveJenjang = normalize(activeJenjang);
-            const rowJenjangRaw = normalize(row.jenjang_studi || row.jenjang);
-            
-            if (normActiveJenjang) {
-              if (!rowJenjangRaw) {
-                return false;
-              }
-              const cleanActiveJenjang = normActiveJenjang.replace(/[^a-z0-9]/g, '');
-              const cleanRowJenjang = rowJenjangRaw.replace(/[^a-z0-9]/g, '');
-              if (!cleanRowJenjang.includes(cleanActiveJenjang) && !cleanActiveJenjang.includes(cleanRowJenjang)) {
-                return false;
-              }
+            // Tampil berdasarkan Cabang, Jenjang Studi, dan Asal Sekolah
+            if (!isJenjangMatch(activeJenjang, rowJenjang, rowKelas)) {
+              return false;
             }
             
-            // 2. Check Asal Sekolah
+            // Check Asal Sekolah if student profile has asal_sekolah
             const normActiveSekolah = normalize(activeSekolah);
             const rowSekolahRaw = normalize(row.sekolah || row.asal_sekolah);
             
-            if (normActiveSekolah) {
-              if (!rowSekolahRaw) {
-                return false;
-              }
+            if (normActiveSekolah && rowSekolahRaw) {
               const cleanActiveSekolah = normActiveSekolah.replace(/[^a-z0-9]/g, '');
               const cleanRowSekolah = rowSekolahRaw.replace(/[^a-z0-9]/g, '');
               if (!cleanRowSekolah.includes(cleanActiveSekolah) && !cleanActiveSekolah.includes(cleanRowSekolah)) {
